@@ -1,0 +1,3 @@
+Fast
+requests
+python-dotenv

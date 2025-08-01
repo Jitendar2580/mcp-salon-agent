@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Smart AI Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <style>
+        body {
+            background-color: #f4f6f9;
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .chat-container {
+            max-width: 80%;
+            margin: 50px auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            font-weight: bold;
+        }
+
+        .chat-log {
+            padding: 20px;
+            height: 650px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.user .msg {
+            background-color: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .message.bot .msg {
+            background-color: #e2e3e5;
+            color: #41464b;
+        }
+
+        .msg {
+            padding: 10px 15px;
+            border-radius: 20px;
+            max-width: 75%;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .msg code,
+        .msg pre {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 8px;
+            display: block;
+            margin-top: 5px;
+        }
+
+        .chat-input {
+            display: flex;
+            border-top: 1px solid #dee2e6;
+            padding: 15px;
+            background-color: #fafafa;
+        }
+
+        .chat-input input {
+            flex: 1;
+            border-radius: 30px;
+            padding: 10px 20px;
+        }
+
+        .chat-input button {
+            margin-left: 10px;
+            border-radius: 30px;
+            padding: 10px 20px;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .info-icon {
+            cursor: pointer;
+        }
+
+        .info-text {
+            display: none;
+            width: 500px;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: #333;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            z-index: 100;
+        }
+
+        .info-icon:hover .info-text {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-container">
+        <div class="chat-header d-flex justify-content-between pe-5 bg-primary p-2 text-white">
+            <h4>🤖 Smart AI Assistant</h4>
+            <div class="info-icon" style="position: relative;">
+                <i class="fa fa-info-circle mt-2 fs-5"></i>
+                <div class="info-text">
+                    <p>
+                        You are a helpful AI assistant with access to the following four specialized tools.
+                    </p>
+                    <p>You MUST decide which tool to invoke based on the user's question. Choose only one tool per
+                        question unless explicitly asked to do multiple things.</p>
+                    <p>
+                        Each tool is described below. Think carefully before calling a tool. Always return the result
+                        from the tool.
+                    </p>
+                    <p>
+                        ---
+                    </p>
+                    <p>
+                        🔢 Solve equations, arithmetic, algebra, geometry problems
+                    </p>
+                    <p>
+                        ☁️ Get current weather conditions for any location
+                    </p>
+                    <p>
+                        📘 Explain concepts in science, history, programming and more
+                    </p>
+                    <p>
+                        ✈️ Get customized trip itineraries and recommendations
+                    </p>
+                    <p class="note">Note: I can help Email send on provided Email.</p>
+
+                </div>
+            </div>
+        </div>
+        <div id="chatLog" class="chat-log"></div>
+        <form id="chatForm" class="chat-input">
+            <input type="text" id="questionInput" class="form-control" placeholder="Type your question..."
+                autocomplete="off">
+            <button type="submit" class="btn btn-primary">Send</button>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById("chatForm");
+        const questionInput = document.getElementById("questionInput");
+        const chatLog = document.getElementById("chatLog");
+
+        function appendMessage(sender, text) {
+            const msgDiv = document.createElement("div");
+            msgDiv.className = `message ${sender}`;
+            msgDiv.innerHTML = `<div class="msg">${marked.parse(text)}</div>`;
+            chatLog.appendChild(msgDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const message = questionInput.value.trim();
+            if (!message) return;
+
+            appendMessage("user", message);
+            questionInput.value = "";
+
+            appendMessage("bot", "_Thinking..._");
+
+            try {
+                const res = await fetch('api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await res.json();
+                chatLog.lastChild.remove();
+                appendMessage("bot", data.response);
+            } catch (err) {
+                chatLog.lastChild.remove();
+                appendMessage("bot", "❌ Failed to fetch response. Please try again.");
+            }
+        });
+    </script>
+</body>
+
+</html>
