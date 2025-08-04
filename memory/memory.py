@@ -10,11 +10,14 @@ from tools import book_salon
 import json
 import dateparser
 from datetime import datetime
+from openai import OpenAI
 
 load_dotenv()
 
-API_KEY = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=API_KEY)
+# API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),  # Make sure to set your API key
+)
 
 
 # In-memory storage for appointments and conversations
@@ -76,9 +79,9 @@ def extract_info_from_input(user_input: str, memory: ConversationMemory) -> Dict
 
     try:
         chat_completion = client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "llama3-70b-8192"),
+            model="gpt-4o",  # or "gpt-4", "gpt-3.5-turbo", etc.
             messages=[{"role": "user", "content": extraction_prompt}],
-            temperature=0.1
+            temperature=0.3,  
         )
 
         response = chat_completion.choices[0].message.content.strip()
@@ -128,34 +131,29 @@ def generate_response_with_memory(user_input: str, session_id: str) -> str:
     for key, value in extracted_info.items():
         memory.update_info(key, value)
 
-    # MCP-style system message
-    tool_descriptions = "\n".join(
-        [f"- {name}: {info['description']}" for name, info in tools.items()]
-    )
+    # Prepare tools in OpenAI format
+    openai_tools = []
+    for tool_name, tool_info in tools.items():
+        openai_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "description": tool_info["description"],
+                "parameters": tool_info["parameters"]
+            }
+        })
 
+    # System message
+    today = datetime.today().strftime("%A, %B %d, %Y")  # e.g., "Monday, August 4, 2025"
     system_instruction = {
         "role": "system",
         "content": f"""
-            You're a smart assistant. You must decide whether to answer directly or use a tool.
+            You're a smart assistant. You can use the available tools when you have all required information.
 
-            If you have enough information, respond with this EXACT format:
-
-            {{
-            "tool_call": {{
-                "name": "<tool_name>",
-                "arguments": {{
-                "arg1": "value",
-                "arg2": "value"
-                }}
-            }}
-            }}
-
-            Only use tools from the following list:
-            {tool_descriptions}
-
-            If you do **not** have all required fields, do **not** call a tool.  
-            Instead, **respond naturally** to the user, clearly asking for the missing information.
-            Ask the user directly for just the missing parts, without extra explanation.
+            🧠 If the user's message includes a natural time reference (like "tomorrow", "today", or a weekday), interpret it based on today's date: {today}.  
+            Always resolve and include the **full date** in your response — weekday, month, day, and year.
+            
+            If you don't have all required information for a tool call, ask the user naturally for the missing information.
         """
     }
 
@@ -168,47 +166,63 @@ def generate_response_with_memory(user_input: str, session_id: str) -> str:
 
     try:
         chat_completion = client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "llama3-70b-8192"),
+            model="gpt-4o",
             messages=messages,
-            temperature=0.3
+            temperature=0.3,
+            tools=openai_tools,  # Use properly formatted tools
+            tool_choice="auto"   # Let the model decide when to use tools
         )
-        response = chat_completion.choices[0].message.content.strip()
+        
+        print("chat_completion------------------", chat_completion)
+
+        message = chat_completion.choices[0].message
+        
+        # Handle tool calls
+        if message.tool_calls:
+            print("🚨 Tool call was requested🚨", message.tool_calls)
+            
+            tool_call = message.tool_calls[0]
+            tool_name = tool_call.function.name
+            tool_args = json.loads(tool_call.function.arguments)
+            
+            print("tool_args-----------", tool_args)
+
+            # Execute the tool function
+            if tool_name in tools:
+                tool_function = tools[tool_name].get("function")
+                if tool_function:
+                    result = tool_function(**tool_args)
+                else:
+                    result = handle_tool_call(tool_name, tool_args)  # Fallback to existing handler
+
+                # Generate human-readable reply
+                if tool_name == "book_salon":
+                    readable_datetime = format_natural_datetime(tool_args.get('date', ''), tool_args.get('time', ''))
+                    reply = f"""✅ Your appointment with **{tool_args.get('stylist')}** for a **{tool_args.get('service')}** is booked on **{readable_datetime}**."""
+                elif tool_name == "cancel_appointment":
+                    reply = f"""❌ Your appointment on **{tool_args.get('date')}** has been canceled, {tool_args.get('name')}."""
+                elif tool_name == "reschedule_appointment":
+                    reply = f"""🔁 Your appointment has been rescheduled to **{tool_args.get('new_date')} at {tool_args.get('new_time')}**, {tool_args.get('name')}."""
+                elif tool_name == "weather":
+                    reply = f"""🌤️ Here's the current weather for **{tool_args.get('city')}**:\n\n{result}"""
+                else:
+                    reply = result  # Fallback to tool output
+
+                # Only add the final human-readable response to memory, not the tool execution details
+                memory.add_message("assistant", reply)
+                return reply
+            else:
+                return f"⚠️ Unknown tool: {tool_name}"
+        
+        # No tool call, return regular response
+        response = message.content.strip() if message.content else ""
+        memory.add_message("assistant", response)
+        return response
+
     except Exception as e:
         return f"⚠️ LLM error: {e}"
 
-    # Detect tool call
-    tool_call = extract_tool_call(response)
 
-    if tool_call:
-        tool_name, tool_args = tool_call
-        result = handle_tool_call(tool_name, tool_args)
-        print("tool_argstool_argstool_args-----------",tool_args)
-        memory.add_message("assistant", f"[Tool `{tool_name}` called with args]")
-        memory.add_message("tool", result)
-
-
-        # Clean, human-readable reply
-        if tool_name == "book_salon":
-            print("book_salonbook_salonbook_salon",book_salon)
-            readable_datetime = format_natural_datetime(tool_args.get('date', ''), tool_args.get('time', ''))
-            print("readable_datetimereadable_datetimereadable_datetime",readable_datetime)
-            
-            reply = f"""✅ Your appointment with **{tool_args.get('stylist')}** for a **{tool_args.get('service')}** is booked on **{readable_datetime}**."""
-        elif tool_name == "cancel_appointment":
-            reply = f"""❌ Your appointment on **{tool_args.get('date')}** has been canceled, {tool_args.get('name')}."""
-        elif tool_name == "reschedule_appointment":
-            reply = f"""🔁 Your appointment has been rescheduled to **{tool_args.get('new_date')} at {tool_args.get('new_time')}**, {tool_args.get('name')}."""
-        elif tool_name == "weather":
-            reply = f"""🌤️ Here's the current weather for **{tool_args.get('city')}**:\n\n{result}"""
-        else:
-            reply = result  # Fallback to tool output
-
-        memory.add_message("assistant", reply)
-        return reply
-
-    # No tool call, return assistant response
-    memory.add_message("assistant", response)
-    return response
 
 
 def handle_tool_call(tool_name: str, arguments: Dict[str, str]) -> str:
