@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from routes.route_2 import route_query_to_tool_2
+from memory.memory import generate_response_with_memory
 
 load_dotenv()
 
@@ -17,6 +17,8 @@ templates = Jinja2Templates(directory="templates")
 # Pydantic model for chat
 class ChatRequest(BaseModel):
     message: str
+    user_input: str
+    session_id: str = "default"
 
 
 # HTML route
@@ -31,7 +33,7 @@ async def chat(request: ChatRequest):
     if not request.message:
         raise HTTPException(status_code=400, detail="No message provided")
 
-    result = route_query_to_tool_2(request.message)
+    result= generate_response_with_memory(request.user_input, request.session_id)
     return {"response": result}
 
  
