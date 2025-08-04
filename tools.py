@@ -1,5 +1,5 @@
 import random
-import wikipedia
+# import wikipedia
 import os
 import requests
 from dotenv import load_dotenv
@@ -14,32 +14,38 @@ load_dotenv()
 salon_appointments = {}
 
 
-def book_salon(name: str, date: str, time: str, service: str,stylist: str) -> str:
+def book_salon(name: str, date: str, time: str, service: str, stylist: str) -> str:
     """Book salon appointment"""
-    key = f"{name}_{date}_{time}"
-    if key in salon_appointments:
-        return f"❌ Sorry, there's already a booking for {name} on {date} at {time}. Would you like to choose a different time?"
-
-    salon_appointments[key] = {
+    appointment_id = f"{name}_{date}_{time}"
+    salon_appointments[appointment_id] = {  
         "name": name,
         "date": date,
         "time": time,
         "service": service,
-        "stylist": stylist,
-        "created_at": datetime.now().isoformat()
+        "stylist": stylist
     }
-    # Debugging line 
     
-    return f"✅ Booking confirmed! Your {service} appointment is scheduled for {date} at {time}."
+    return f"✅ Appointment booked for {name} on {date} at {time} for a {service} with {stylist}."
 
+def cancel_appointment(name: str, date: str) -> str:
+    for key, appt in list(salon_appointments.items()):
+        if appt['name'].lower() == name.lower() and appt['date'] == date:
+            del salon_appointments[key]
+            return f"✅ Appointment for {name} on {date} has been canceled."
+    return f"⚠️ No appointment found for {name} on {date}."
 
-def cancel_salon(name: str, date: str, time: str) -> str:
-    key = f"{name}_{date}_{time}"
-    if key in salon_appointments:
-        del salon_appointments[key]
-        return f"Booking canceled for {name} on {date} at {time}."
-    else:
-        return f"No booking found for {name} on {date} at {time}."
+def reschedule_appointment(name: str, date: str, new_date: str, new_time: str) -> str:
+    for key, appt in list(salon_appointments.items()):
+        if appt['name'].lower() == name.lower() and appt['date'] == date:
+            new_key = f"{name}_{new_date}_{new_time}"
+            salon_appointments[new_key] = {
+                **appt,
+                "date": new_date,
+                "time": new_time
+            }
+            del salon_appointments[key]
+            return f"🔁 Appointment rescheduled for {name} to {new_date} at {new_time}."
+    return f"⚠️ No appointment found for {name} on {date}."
 
 
 def get_weather(city: str) -> str:
@@ -56,17 +62,18 @@ def get_weather(city: str) -> str:
 
 # tools definition
 tools = {
-    "salon_booking": {
-        "description": "Book a salon appointment with name, date, time, and service.",
+    "book_salon": {
+        "description": "Book a salon appointment with name, date, time, stylist, and service.",
         "parameters": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Client's name"},
                 "date": {"type": "string", "description": "Appointment date (YYYY-MM-DD)"},
                 "time": {"type": "string", "description": "Time of appointment (HH:MM)"},
-                "service": {"type": "string", "description": "Service requested (e.g., haircut, manicure)"}
+                "stylist": {"type": "string", "description": "Stylist name (e.g., John, Sarah)"},
+                "service": {"type": "string", "description": "Service requested (e.g., haircut, manicure)"},
             },
-            "required": ["name", "date", "time", "service"]
+            "required": ["name", "date", "time", "service", "stylist"]
         },
         "function": book_salon  # this should be your actual function
     },
@@ -84,7 +91,7 @@ tools = {
         },
         "function": get_weather,
     },
-    "salon_cancel": {
+    "cancel_appointment": {
         "description": "Cancel a previously booked salon appointment using name, date, and time.",
         "parameters": {
             "type": "object",
@@ -95,7 +102,7 @@ tools = {
             },
             "required": ["name", "date", "time"]
         },
-        "function": cancel_salon
+        "function": cancel_appointment
     },
     # "math_solver": {
     #     "description": "Solve basic arithmetic or math expressions.",

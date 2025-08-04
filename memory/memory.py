@@ -1,12 +1,16 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional, Tuple
 from dotenv import load_dotenv
+from tools import tools
 from groq import Groq
 from typing import Dict
 from datetime import datetime 
-import os
+import os , re
 from tools import book_salon
 import json
+import dateparser
+from datetime import datetime
+
 load_dotenv()
 
 API_KEY = os.getenv("GROQ_API_KEY")
@@ -123,92 +127,165 @@ def generate_response_with_memory(user_input: str, session_id: str) -> str:
     extracted_info = extract_info_from_input(user_input, memory)
     for key, value in extracted_info.items():
         memory.update_info(key, value)
-    
-    # Build conversation context
-    recent_messages = memory.messages[-6:]  # Last 3 exchanges
-    conversation_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_messages])
-    
-    missing_info = memory.get_missing_info()
-    
-    # Generate contextual prompt
-    if memory.is_complete():
-        # Ready to book
-        prompt = f"""
-            You are a friendly salon assistant. The user has provided all necessary information for booking.
 
-            Conversation history:
-            {conversation_context}
+    # MCP-style system message
+    tool_descriptions = "\n".join(
+        [f"- {name}: {info['description']}" for name, info in tools.items()]
+    )
 
-            Collected information:
-            - Name: {memory.collected_info['name']}
-            - Date: {memory.collected_info['date']}
-            - Time: {memory.collected_info['time']}
-            - Service: {memory.collected_info['service']}
-            - Stylist: {memory.collected_info['stylist']}
+    system_instruction = {
+        "role": "system",
+        "content": f"""
+            You're a smart assistant. You must decide whether to answer directly or use a tool.
 
-            Confirm the booking details and proceed to book the appointment using the salon_booking tool.
-            """
-        memory.conversation_state = "confirming"
-        
-        # Make the booking
-        booking_result = book_salon(
-            memory.collected_info['name'],
-            memory.collected_info['date'], 
-            memory.collected_info['time'],
-            memory.collected_info['service'],
-            memory.collected_info['stylist']
+            If you have enough information, respond with this EXACT format:
+
+            {{
+            "tool_call": {{
+                "name": "<tool_name>",
+                "arguments": {{
+                "arg1": "value",
+                "arg2": "value"
+                }}
+            }}
+            }}
+
+            Only use tools from the following list:
+            {tool_descriptions}
+
+            If you do **not** have all required fields, do **not** call a tool.  
+            Instead, **respond naturally** to the user, clearly asking for the missing information.
+            Ask the user directly for just the missing parts, without extra explanation.
+        """
+    }
+
+    # Build message history
+    recent_messages = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in memory.messages[-6:]
+    ]
+    messages = [system_instruction] + recent_messages
+
+    try:
+        chat_completion = client.chat.completions.create(
+            model=os.getenv("MODEL_NAME", "llama3-70b-8192"),
+            messages=messages,
+            temperature=0.3
         )
-        
-        response = f"Perfect! Let me confirm your appointment details:\n\n"
-        response += f"📅 **Name:** {memory.collected_info['name']}\n"
-        response += f"📅 **Date:** {memory.collected_info['date']}\n"
-        response += f"🕐 **Time:** {memory.collected_info['time']}\n"
-        response += f"💄 **Service:** {memory.collected_info['service']}\n\n"
-        response += f"💄 **Stylist:** {memory.collected_info['stylist']}\n\n"
-        response += f"{booking_result}\n\n"
-        response += "Is there anything else I can help you with today?"
-        
-        memory.conversation_state = "completed"
-        
-    elif len(missing_info) > 0:
-        # Still collecting information
-        memory.conversation_state = "collecting"
-        
-        prompt = f"""
-            You are a friendly salon assistant helping a customer book an appointment.
+        response = chat_completion.choices[0].message.content.strip()
+    except Exception as e:
+        return f"⚠️ LLM error: {e}"
 
-            Conversation history:
-            {conversation_context}
+    # Detect tool call
+    tool_call = extract_tool_call(response)
 
-            Information collected so far:
-            {json.dumps({k: v for k, v in memory.collected_info.items() if v is not None}, indent=2)}
+    if tool_call:
+        tool_name, tool_args = tool_call
+        result = handle_tool_call(tool_name, tool_args)
+        print("tool_argstool_argstool_args-----------",tool_args)
+        memory.add_message("assistant", f"[Tool `{tool_name}` called with args]")
+        memory.add_message("tool", result)
 
-            Still need: {', '.join(missing_info)}
 
-            Continue the conversation naturally, asking for the missing information one piece at a time. 
-            Be conversational and helpful. If they provided some info, acknowledge it before asking for what's missing.
-            """
-        
-        try:
-            chat_completion = client.chat.completions.create(
-                model=os.getenv("MODEL_NAME", "llama3-70b-8192"),
-                messages=[
-                    {"role": "system", "content": "You are a helpful salon assistant. Be friendly, conversational, and ask for missing appointment details naturally."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.5
-            )
-            response = chat_completion.choices[0].message.content.strip()
-        except Exception as e:
-            response = f"I'd be happy to help you book an appointment. Could you please provide your {missing_info[0]}?"
-    
-    else:
-        # Initial greeting
-        response = "Hello! Welcome to our salon. I'd be happy to help you book an appointment. What service are you interested in today?"
-        memory.conversation_state = "greeting"
-    
+        # Clean, human-readable reply
+        if tool_name == "book_salon":
+            print("book_salonbook_salonbook_salon",book_salon)
+            readable_datetime = format_natural_datetime(tool_args.get('date', ''), tool_args.get('time', ''))
+            print("readable_datetimereadable_datetimereadable_datetime",readable_datetime)
+            
+            reply = f"""✅ Your appointment with **{tool_args.get('stylist')}** for a **{tool_args.get('service')}** is booked on **{readable_datetime}**."""
+        elif tool_name == "cancel_appointment":
+            reply = f"""❌ Your appointment on **{tool_args.get('date')}** has been canceled, {tool_args.get('name')}."""
+        elif tool_name == "reschedule_appointment":
+            reply = f"""🔁 Your appointment has been rescheduled to **{tool_args.get('new_date')} at {tool_args.get('new_time')}**, {tool_args.get('name')}."""
+        elif tool_name == "weather":
+            reply = f"""🌤️ Here's the current weather for **{tool_args.get('city')}**:\n\n{result}"""
+        else:
+            reply = result  # Fallback to tool output
+
+        memory.add_message("assistant", reply)
+        return reply
+
+    # No tool call, return assistant response
     memory.add_message("assistant", response)
     return response
+
+
+def handle_tool_call(tool_name: str, arguments: Dict[str, str]) -> str:
+    tool = tools.get(tool_name)
+    if not tool:
+        return f"⚠️ Tool '{tool_name}' is not defined."
+
+    required_args = tool["parameters"].get("required", [])
+    missing_args = [arg for arg in required_args if arg not in arguments]
+
+    if missing_args:
+        return f"⚠️ Missing required argument(s) for tool '{tool_name}': {', '.join(missing_args)}"
+
+    try:
+        # Match args to function based on required + available order
+        func = tool["function"]
+        # Only pass valid args defined in properties
+        accepted_args = tool["parameters"]["properties"].keys()
+        filtered_args = {k: v for k, v in arguments.items() if k in accepted_args}
+
+        result = func(**filtered_args)
+        return result
+    except Exception as e:
+        return f"❌ Error calling tool '{tool_name}': {str(e)}"
+
+ 
+def extract_tool_call(response: str) -> Optional[Tuple[str, Dict[str, str]]]:
+    try:
+        # Extract the first complete JSON object using brace counting
+        brace_count = 0
+        start_idx = None
+
+        for i, char in enumerate(response):
+            if char == '{':
+                if brace_count == 0:
+                    start_idx = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_idx is not None:
+                    json_block = response[start_idx:i + 1]
+                    try:
+                        parsed = json.loads(json_block)
+                        if "tool_call" in parsed:
+                            tool_call = parsed["tool_call"]
+                            return tool_call["name"], tool_call["arguments"]
+                    except json.JSONDecodeError as e:
+                        print(f"JSON parse error: {e}")
+                    break  # Only extract the first complete block
+
+        # Fallback: check older format
+        fallback = re.search(r'\{"tool":\s*"(.*?)",\s*"args":\s*(\[.*?\]|\{.*?\})\}', response, re.DOTALL)
+        if fallback:
+            name = fallback.group(1)
+            args_raw = fallback.group(2)
+            args_data = json.loads(args_raw)
+            if isinstance(args_data, list):
+                args_dict = {f"arg{i+1}": val for i, val in enumerate(args_data)}
+            else:
+                args_dict = args_data
+            return name, args_dict
+
+    except Exception as e:
+        print(f"Tool call parse error: {e}")
+    return None
+
+
+def format_natural_datetime(date_str: str, time_str: str) -> str:
+    combined = f"{date_str} {time_str}"
+    parsed_dt = dateparser.parse(combined)
+    
+    if not parsed_dt:
+        return f"{date_str} at {time_str}"  # fallback
+
+    return parsed_dt.strftime("%A, %B %d at %I:%M %p")  # e.g., Monday, August 05 at 11:00 AM
+
+
 
 
 # Example usage:
