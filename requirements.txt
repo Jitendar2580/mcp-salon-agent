@@ -1,3 +1,13 @@
-Fast
+# Fast
 requests
 python-dotenv
+
+sqlalchemy
+psycopg2-binary
+
+aiosmtplib
+markdown2
+asyncpg
+
+
+rapidfuzz
