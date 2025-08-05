@@ -16,7 +16,7 @@ load_dotenv()
 
 # API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),  # Make sure to set your API key
+	api_key=os.getenv("OPENAI_API_KEY"), # Make sure to set your API key
 )
 
 
@@ -26,278 +26,317 @@ conversation_memory = {}
 
 
 class ConversationMemory:
-    def __init__(self, session_id: str):
-        self.session_id = session_id
-        self.messages = []
-        self.collected_info = {
-            "name": None,
-            "date": None,
-            "time": None,
-            "service": None,
-            "stylist": None
-        }
-        # greeting, collecting, confirming, completed
-        self.conversation_state = "greeting"
+	def __init__(self, session_id: str):
+		self.session_id = session_id
+		self.messages = []
+		self.collected_info = {
+			"name": None,
+			"date": None,
+			"time": None,
+			"service": None,
+			"stylist": None
+		}
+		# greeting, collecting, confirming, completed
+		self.conversation_state = "greeting"
 
-    def add_message(self, role: str, content: str):
-        self.messages.append({
-            "role": role,
-            "content": content,
-            "timestamp": datetime.now().isoformat()
-        })
+	def add_message(self, role: str, content: str):
+		self.messages.append({
+			"role": role,
+			"content": content,
+			"timestamp": datetime.now().isoformat()
+		})
 
-    def update_info(self, key: str, value: str):
-        if key in self.collected_info:
-            self.collected_info[key] = value
+	def update_info(self, key: str, value: str):
+		if key in self.collected_info:
+			self.collected_info[key] = value
 
-    def get_missing_info(self) -> List[str]:
-        return [key for key, value in self.collected_info.items() if value is None]
+	def get_missing_info(self) -> List[str]:
+		return [key for key, value in self.collected_info.items() if value is None]
 
-    def is_complete(self) -> bool:
-        return all(value is not None for value in self.collected_info.values())
+	def is_complete(self) -> bool:
+		return all(value is not None for value in self.collected_info.values())
 
 
 def get_or_create_memory(session_id: str) -> ConversationMemory:
-    """Get existing conversation memory or create new one"""
-    if session_id not in conversation_memory:
-        conversation_memory[session_id] = ConversationMemory(session_id)
-    return conversation_memory[session_id]
+	"""Get existing conversation memory or create new one"""
+	if session_id not in conversation_memory:
+		conversation_memory[session_id] = ConversationMemory(session_id)
+	return conversation_memory[session_id]
 
+
+# def extract_info_from_input(user_input: str, memory: ConversationMemory) -> Dict[str, str]:
+#     """Extract appointment information from user input using LLM"""
+#     extraction_prompt = f"""
+#         Extract appointment information from the user's message. Return ONLY a JSON object with the fields that can be clearly identified.
+#         Use null for missing information. Format dates as YYYY-MM-DD and times as HH:MM (24-hour format).
+
+#         Current collected info: {json.dumps(memory.collected_info)}
+#         User message: "{user_input}"
+
+#         Return format:
+#         {{"name": "value or null", "date": "value or null", "time": "value or null", "service": "value or null", "stylist": "value or null"}}
+#     """
+
+#     try:
+#         chat_completion = client.chat.completions.create(
+#             model="gpt-4o",  # or "gpt-4", "gpt-3.5-turbo", etc.
+#             messages=[{"role": "user", "content": extraction_prompt}],
+#             temperature=0.3,  
+#         )
+
+#         response = chat_completion.choices[0].message.content.strip()
+#         # Extract JSON from response
+#         start_idx = response.find('{')
+#         end_idx = response.rfind('}') + 1
+#         if start_idx != -1 and end_idx != -1:
+#             json_str = response[start_idx:end_idx]
+#             extracted_info = json.loads(json_str)
+#             return {k: v for k, v in extracted_info.items() if v is not None}
+#         return {}
+#     except Exception as e:
+#         print(f"Extraction error: {e}")
+#         return {}
 
 def extract_info_from_input(user_input: str, memory: ConversationMemory) -> Dict[str, str]:
-    """Extract appointment information from user input using LLM"""
-    extraction_prompt = f"""
-        Extract appointment information from the user's message. Return ONLY a JSON object with the fields that can be clearly identified.
-        Use null for missing information. Format dates as YYYY-MM-DD and times as HH:MM (24-hour format).
+	"""Extract appointment information from user input using pattern matching (no LLM)."""
+	extracted = {}
 
-        Current collected info: {json.dumps(memory.collected_info)}
-        User message: "{user_input}"
+	# 1. Extract date (supports "tomorrow", "August 5", "next Monday", etc.)
+	date = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
+	if date:
+		extracted["date"] = date.strftime("%Y-%m-%d")
 
-        Return format:
-        {{"name": "value or null", "date": "value or null", "time": "value or null", "service": "value or null", "stylist": "value or null"}}
-    """
+	# 2. Extract time
+	time_match = re.search(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b', user_input, re.IGNORECASE)
+	if time_match:
+		hour = int(time_match.group(1))
+		minute = int(time_match.group(2)) if time_match.group(2) else 0
+		am_pm = time_match.group(3)
+		if am_pm:
+			if am_pm.lower() == 'pm' and hour != 12:
+				hour += 12
+			elif am_pm.lower() == 'am' and hour == 12:
+				hour = 0
+		extracted["time"] = f"{hour:02}:{minute:02}"
 
-    try:
-        chat_completion = client.chat.completions.create(
-            model="gpt-4o",  # or "gpt-4", "gpt-3.5-turbo", etc.
-            messages=[{"role": "user", "content": extraction_prompt}],
-            temperature=0.3,  
-        )
+	# 3. Extract name (look for "I'm NAME", "my name is NAME")
+	name_match = re.search(r"(?:i'?m|my name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", user_input, re.IGNORECASE)
+	if name_match:
+		extracted["name"] = name_match.group(1).strip()
 
-        response = chat_completion.choices[0].message.content.strip()
-        # Extract JSON from response
-        start_idx = response.find('{')
-        end_idx = response.rfind('}') + 1
-        if start_idx != -1 and end_idx != -1:
-            json_str = response[start_idx:end_idx]
-            extracted_info = json.loads(json_str)
-            return {k: v for k, v in extracted_info.items() if v is not None}
-        return {}
-    except Exception as e:
-        print(f"Extraction error: {e}")
-        return {}
+	# 4. Extract service (match common service words)
+	services = ["haircut", "hair color", "manicure", "pedicure", "facial", "massage"]
+	for service in services:
+		if service in user_input.lower():
+			extracted["service"] = service
+			break
 
- 
+	# 5. Extract stylist (look for "with NAME", "stylist NAME")
+	stylist_match = re.search(r"(?:with|stylist)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", user_input, re.IGNORECASE)
+	if stylist_match:
+		extracted["stylist"] = stylist_match.group(1).strip()
+
+	return extracted
 
 def get_conversation_summary(session_id: str) -> Dict:
-    """Get conversation summary for debugging/monitoring"""
-    if session_id in conversation_memory:
-        memory = conversation_memory[session_id]
-        return {
-            "session_id": session_id,
-            "state": memory.conversation_state,
-            "collected_info": memory.collected_info,
-            "message_count": len(memory.messages),
-            "is_complete": memory.is_complete()
-        }
-    return {"error": "Session not found"}
+	"""Get conversation summary for debugging/monitoring"""
+	if session_id in conversation_memory:
+		memory = conversation_memory[session_id]
+		return {
+			"session_id": session_id,
+			"state": memory.conversation_state,
+			"collected_info": memory.collected_info,
+			"message_count": len(memory.messages),
+			"is_complete": memory.is_complete()
+		}
+	return {"error": "Session not found"}
 
 
 def clear_conversation(session_id: str) -> bool:
-    """Clear conversation memory for a session"""
-    if session_id in conversation_memory:
-        del conversation_memory[session_id]
-        return True
-    return False
- 
+	"""Clear conversation memory for a session"""
+	if session_id in conversation_memory:
+		del conversation_memory[session_id]
+		return True
+	return False
+
 
 def generate_response_with_memory(user_input: str, session_id: str) -> str:
-    """Generate contextual response based on conversation memory"""
-    memory = get_or_create_memory(session_id)
-    memory.add_message("user", user_input)
-    
-    # Extract new information
-    extracted_info = extract_info_from_input(user_input, memory)
-    for key, value in extracted_info.items():
-        memory.update_info(key, value)
+	"""Generate contextual response based on conversation memory"""
+	memory = get_or_create_memory(session_id)
+	memory.add_message("user", user_input)
 
-    # Prepare tools in OpenAI format
-    openai_tools = []
-    for tool_name, tool_info in tools.items():
-        openai_tools.append({
-            "type": "function",
-            "function": {
-                "name": tool_name,
-                "description": tool_info["description"],
-                "parameters": tool_info["parameters"]
-            }
-        })
+	# Extract new information
+	extracted_info = extract_info_from_input(user_input, memory)
+	for key, value in extracted_info.items():
+		memory.update_info(key, value)
 
-    # System message
-    today = datetime.today().strftime("%A, %B %d, %Y")  # e.g., "Monday, August 4, 2025"
-    system_instruction = {
-        "role": "system",
-        "content": f"""
-            You're a smart assistant. You can use the available tools when you have all required information.
+	# Prepare tools in OpenAI format
+	openai_tools = []
+	for tool_name, tool_info in tools.items():
+		openai_tools.append({
+			"type": "function",
+			"function": {
+				"name": tool_name,
+				"description": tool_info["description"],
+				"parameters": tool_info["parameters"]
+			}
+		})
 
-            🧠 If the user's message includes a natural time reference (like "tomorrow", "today", or a weekday), interpret it based on today's date: {today}.  
-            Always resolve and include the **full date** in your response — weekday, month, day, and year.
-            
-            If you don't have all required information for a tool call, ask the user naturally for the missing information.
-        """
-    }
+	# System message
+	today = datetime.today().strftime("%A, %B %d, %Y") # e.g., "Monday, August 4, 2025"
+	system_instruction = {
+		"role": "system",
+		"content": f"""
+		                You're a smart assistant. You can use the available tools when you have all required information.
+		            
+		                🧠 If the user's message includes a natural time reference (like "tomorrow", "today", or a weekday), interpret it based on today's date: {today}.  
+		                Always resolve and include the **full date** in your response — weekday, month, day, and year.
+		                
+		                If you don't have all required information for a tool call, ask the user naturally for the missing information.
+		            """
+	}
 
-    # Build message history
-    recent_messages = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in memory.messages[-6:]
-    ]
-    messages = [system_instruction] + recent_messages
+	# Build message history
+	recent_messages = [
+		{"role": msg["role"], "content": msg["content"]}
+		for msg in memory.messages[-6:]
+	]
+	messages = [system_instruction] + recent_messages
 
-    try:
-        chat_completion = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            temperature=0.3,
-            tools=openai_tools,  # Use properly formatted tools
-            tool_choice="auto"   # Let the model decide when to use tools
-        )
-        
-        print("chat_completion------------------", chat_completion)
+	try:
+		chat_completion = client.chat.completions.create(
+			model="gpt-4o",
+			messages=messages,
+			temperature=0.3,
+			tools=openai_tools, # Use properly formatted tools
+			tool_choice="auto" # Let the model decide when to use tools
+		)
 
-        message = chat_completion.choices[0].message
-        
-        # Handle tool calls
-        if message.tool_calls:
-            print("🚨 Tool call was requested🚨", message.tool_calls)
-            
-            tool_call = message.tool_calls[0]
-            tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments)
-            
-            print("tool_args-----------", tool_args)
+		print("chat_completion------------------", chat_completion)
 
-            # Execute the tool function
-            if tool_name in tools:
-                tool_function = tools[tool_name].get("function")
-                if tool_function:
-                    result = tool_function(**tool_args)
-                else:
-                    result = handle_tool_call(tool_name, tool_args)  # Fallback to existing handler
+		message = chat_completion.choices[0].message
 
-                # Generate human-readable reply
-                if tool_name == "book_salon":
-                    readable_datetime = format_natural_datetime(tool_args.get('date', ''), tool_args.get('time', ''))
-                    reply = f"""✅ Your appointment with **{tool_args.get('stylist')}** for a **{tool_args.get('service')}** is booked on **{readable_datetime}**."""
-                elif tool_name == "cancel_appointment":
-                    reply = f"""❌ Your appointment on **{tool_args.get('date')}** has been canceled, {tool_args.get('name')}."""
-                elif tool_name == "reschedule_appointment":
-                    reply = f"""🔁 Your appointment has been rescheduled to **{tool_args.get('new_date')} at {tool_args.get('new_time')}**, {tool_args.get('name')}."""
-                elif tool_name == "weather":
-                    reply = f"""🌤️ Here's the current weather for **{tool_args.get('city')}**:\n\n{result}"""
-                else:
-                    reply = result  # Fallback to tool output
+		# Handle tool calls
+		if message.tool_calls:
+			print("🚨 Tool call was requested🚨", message.tool_calls)
 
-                # Only add the final human-readable response to memory, not the tool execution details
-                memory.add_message("assistant", reply)
-                return reply
-            else:
-                return f"⚠️ Unknown tool: {tool_name}"
-        
-        # No tool call, return regular response
-        response = message.content.strip() if message.content else ""
-        memory.add_message("assistant", response)
-        return response
+			tool_call = message.tool_calls[0]
+			tool_name = tool_call.function.name
+			tool_args = json.loads(tool_call.function.arguments)
 
-    except Exception as e:
-        return f"⚠️ LLM error: {e}"
+			print("tool_args-----------", tool_args)
+
+			# Execute the tool function
+			if tool_name in tools:
+				tool_function = tools[tool_name].get("function")
+				if tool_function:
+					result = tool_function(**tool_args)
+				else:
+					result = handle_tool_call(tool_name, tool_args) # Fallback to existing handler
+
+				# Generate human-readable reply
+				if tool_name == "book_salon":
+					readable_datetime = format_natural_datetime(tool_args.get('date', ''), tool_args.get('time', ''))
+					reply = f"""✅ Your appointment with **{tool_args.get('stylist')}** for a **{tool_args.get('service')}** is booked on **{readable_datetime}**."""
+				elif tool_name == "cancel_appointment":
+					reply = f"""❌ Your appointment on **{tool_args.get('date')}** has been canceled, {tool_args.get('name')}."""
+				elif tool_name == "reschedule_appointment":
+					reply = f"""🔁 Your appointment has been rescheduled to **{tool_args.get('new_date')} at {tool_args.get('new_time')}**, {tool_args.get('name')}."""
+				elif tool_name == "weather":
+					reply = f"""🌤️ Here's the current weather for **{tool_args.get('city')}**:\n\n{result}"""
+				else:
+					reply = result # Fallback to tool output
+
+				# Only add the final human-readable response to memory, not the tool execution details
+				memory.add_message("assistant", reply)
+				return reply
+			else:
+				return f"⚠️ Unknown tool: {tool_name}"
+
+		# No tool call, return regular response
+		response = message.content.strip() if message.content else ""
+		memory.add_message("assistant", response)
+		return response
+
+	except Exception as e:
+		return f"⚠️ LLM error: {e}"
 
 
 
 
 def handle_tool_call(tool_name: str, arguments: Dict[str, str]) -> str:
-    tool = tools.get(tool_name)
-    if not tool:
-        return f"⚠️ Tool '{tool_name}' is not defined."
+	tool = tools.get(tool_name)
+	if not tool:
+		return f"⚠️ Tool '{tool_name}' is not defined."
 
-    required_args = tool["parameters"].get("required", [])
-    missing_args = [arg for arg in required_args if arg not in arguments]
+	required_args = tool["parameters"].get("required", [])
+	missing_args = [arg for arg in required_args if arg not in arguments]
 
-    if missing_args:
-        return f"⚠️ Missing required argument(s) for tool '{tool_name}': {', '.join(missing_args)}"
+	if missing_args:
+		return f"⚠️ Missing required argument(s) for tool '{tool_name}': {', '.join(missing_args)}"
 
-    try:
-        # Match args to function based on required + available order
-        func = tool["function"]
-        # Only pass valid args defined in properties
-        accepted_args = tool["parameters"]["properties"].keys()
-        filtered_args = {k: v for k, v in arguments.items() if k in accepted_args}
+	try:
+		# Match args to function based on required + available order
+		func = tool["function"]
+		# Only pass valid args defined in properties
+		accepted_args = tool["parameters"]["properties"].keys()
+		filtered_args = {k: v for k, v in arguments.items() if k in accepted_args}
 
-        result = func(**filtered_args)
-        return result
-    except Exception as e:
-        return f"❌ Error calling tool '{tool_name}': {str(e)}"
+		result = func(**filtered_args)
+		return result
+	except Exception as e:
+		return f"❌ Error calling tool '{tool_name}': {str(e)}"
 
- 
+
 def extract_tool_call(response: str) -> Optional[Tuple[str, Dict[str, str]]]:
-    try:
-        # Extract the first complete JSON object using brace counting
-        brace_count = 0
-        start_idx = None
+	try:
+		# Extract the first complete JSON object using brace counting
+		brace_count = 0
+		start_idx = None
 
-        for i, char in enumerate(response):
-            if char == '{':
-                if brace_count == 0:
-                    start_idx = i
-                brace_count += 1
-            elif char == '}':
-                brace_count -= 1
-                if brace_count == 0 and start_idx is not None:
-                    json_block = response[start_idx:i + 1]
-                    try:
-                        parsed = json.loads(json_block)
-                        if "tool_call" in parsed:
-                            tool_call = parsed["tool_call"]
-                            return tool_call["name"], tool_call["arguments"]
-                    except json.JSONDecodeError as e:
-                        print(f"JSON parse error: {e}")
-                    break  # Only extract the first complete block
+		for i, char in enumerate(response):
+			if char == '{':
+				if brace_count == 0:
+					start_idx = i
+				brace_count += 1
+			elif char == '}':
+				brace_count -= 1
+				if brace_count == 0 and start_idx is not None:
+					json_block = response[start_idx:i + 1]
+					try:
+						parsed = json.loads(json_block)
+						if "tool_call" in parsed:
+							tool_call = parsed["tool_call"]
+							return tool_call["name"], tool_call["arguments"]
+					except json.JSONDecodeError as e:
+						print(f"JSON parse error: {e}")
+					break # Only extract the first complete block
 
-        # Fallback: check older format
-        fallback = re.search(r'\{"tool":\s*"(.*?)",\s*"args":\s*(\[.*?\]|\{.*?\})\}', response, re.DOTALL)
-        if fallback:
-            name = fallback.group(1)
-            args_raw = fallback.group(2)
-            args_data = json.loads(args_raw)
-            if isinstance(args_data, list):
-                args_dict = {f"arg{i+1}": val for i, val in enumerate(args_data)}
-            else:
-                args_dict = args_data
-            return name, args_dict
+		# Fallback: check older format
+		fallback = re.search(r'\{"tool":\s*"(.*?)",\s*"args":\s*(\[.*?\]|\{.*?\})\}', response, re.DOTALL)
+		if fallback:
+			name = fallback.group(1)
+			args_raw = fallback.group(2)
+			args_data = json.loads(args_raw)
+			if isinstance(args_data, list):
+				args_dict = {f"arg{i+1}": val for i, val in enumerate(args_data)}
+			else:
+				args_dict = args_data
+			return name, args_dict
 
-    except Exception as e:
-        print(f"Tool call parse error: {e}")
-    return None
+	except Exception as e:
+		print(f"Tool call parse error: {e}")
+	return None
 
 
 def format_natural_datetime(date_str: str, time_str: str) -> str:
-    combined = f"{date_str} {time_str}"
-    parsed_dt = dateparser.parse(combined)
-    
-    if not parsed_dt:
-        return f"{date_str} at {time_str}"  # fallback
+	combined = f"{date_str} {time_str}"
+	parsed_dt = dateparser.parse(combined)
 
-    return parsed_dt.strftime("%A, %B %d at %I:%M %p")  # e.g., Monday, August 05 at 11:00 AM
+	if not parsed_dt:
+		return f"{date_str} at {time_str}" # fallback
+
+	return parsed_dt.strftime("%A, %B %d at %I:%M %p") # e.g., Monday, August 05 at 11:00 AM
 
 
 
@@ -306,9 +345,9 @@ def format_natural_datetime(date_str: str, time_str: str) -> str:
 # if __name__ == "__main__":
 #     # Simulate conversation
 #     session_id = "user123"
-    
+
 #     print("=== Salon Booking Conversation ===")
-    
+
 #     # Conversation flow
 #     responses = [
 #         route_query_to_tool_2("Hi, I want to book an appointment", session_id),
@@ -317,10 +356,10 @@ def format_natural_datetime(date_str: str, time_str: str) -> str:
 #         route_query_to_tool_2("How about tomorrow at 2pm?", session_id),
 #         route_query_to_tool_2("Actually, make it 3pm on December 15th, 2024", session_id)
 #     ]
-    
+
 #     for i, response in enumerate(responses, 1):
 #         print(f"\nResponse {i}: {response}")
-    
+
 #     # Show conversation summary
 #     print(f"\nConversation Summary: {get_conversation_summary(session_id)}")
 #     print(f"\nBookings: {salon_appointments}")
