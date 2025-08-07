@@ -3,7 +3,7 @@ import requests
 from database.connection import SessionLocal
 from database.model import Appointment, Customer, Service, Stylist
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime ,timezone
 from typing import Dict, List, Union
 from sqlalchemy import func
 from rapidfuzz import fuzz ,process as rf_process
@@ -43,7 +43,8 @@ def book_salon(name: str, date: str, time: str, service: str, stylist: str) -> s
 			stylist_id=stylist_obj.id,
 			service_id=service_obj.id,
 			date=datetime.strptime(date, "%Y-%m-%d").date(),
-			time=datetime.strptime(time, "%H:%M").time()
+			time=datetime.strptime(time, "%H:%M").time(),
+			created_at=datetime.now(),
 		)
 
 		session.add(appointment)
