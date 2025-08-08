@@ -1,17 +1,16 @@
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from dotenv import load_dotenv
 from tools import tools
-from groq import Groq
 from typing import Dict 
 import os , re
-from tools import book_salon
 import json
 import dateparser
 from datetime import datetime
 from openai import OpenAI
 from .prompt import system_instruction
 from enum import Enum
+from dateparser.search import search_dates
 
 load_dotenv()
 
@@ -30,16 +29,16 @@ class ConversationMemory:
 	def __init__(self, session_id: str):
 		self.session_id = session_id
 		self.messages = []
-		self.collected_info = {
+		self.bookings = []  # Each booking is a dict with name, date, time, service, stylist
+		self.current_booking = {
 			"name": None,
 			"date": None,
 			"time": None,
 			"service": None,
 			"stylist": None
 		}
-		# greeting, collecting, confirming, completed
-		self.conversation_state = "greeting"
- 
+		self.conversation_state = "greeting"  # greeting, collecting, confirming, completed
+
 	def add_message(self, role: str, content: str, name: str = None):
 		message = {
 			"role": role,
@@ -51,15 +50,30 @@ class ConversationMemory:
 		self.messages.append(message)
 
 	def update_info(self, key: str, value: str):
-		if key in self.collected_info:
-			self.collected_info[key] = value
+		if key in self.current_booking:
+			self.current_booking[key] = value
 
 	def get_missing_info(self) -> List[str]:
-		return [key for key, value in self.collected_info.items() if value is None]
+		return [key for key, value in self.current_booking.items() if value is None]
 
-	def is_complete(self) -> bool:
-		return all(value is not None for value in self.collected_info.values())
+	def is_current_booking_complete(self) -> bool:
+		return all(value is not None for value in self.current_booking.values())
 
+	def finalize_current_booking(self):
+		if self.is_current_booking_complete():
+			self.bookings.append(self.current_booking.copy())
+			self.current_booking = {
+				"name": None,
+				"date": None,
+				"time": None,
+				"service": None,
+				"stylist": None
+			}
+			return True
+		return False
+
+	def get_all_bookings(self) -> List[Dict[str, str]]:
+		return self.bookings
 
 def get_or_create_memory(session_id: str) -> ConversationMemory:
 	"""Get existing conversation memory or create new one"""
@@ -68,49 +82,51 @@ def get_or_create_memory(session_id: str) -> ConversationMemory:
 	return conversation_memory[session_id]
 
 
-def extract_info_from_input(user_input: str, memory: ConversationMemory) -> Dict[str, str]:
-	"""Extract appointment information from user input using pattern matching (no LLM)."""
-	extracted = {}
+def extract_info_from_input(user_input: str, memory: ConversationMemory) -> Dict[str, Any]:
 
-	# 1. Extract date (supports "tomorrow", "August 5", "next Monday", etc.)
-	date = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
-	if date:
-		extracted["date"] = date.strftime("%Y-%m-%d")
+	extracted = {
+		"appointments": []
+	}
 
-	# 2. Extract time
-	time_match = re.search(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b', user_input, re.IGNORECASE)
-	if time_match:
-		hour = int(time_match.group(1))
-		minute = int(time_match.group(2)) if time_match.group(2) else 0
-		am_pm = time_match.group(3)
-		if am_pm:
-			if am_pm.lower() == 'pm' and hour != 12:
-				hour += 12
-			elif am_pm.lower() == 'am' and hour == 12:
-				hour = 0
-		extracted["time"] = f"{hour:02}:{minute:02}"
-
-	# 3. Extract name (look for "I'm NAME", "my name is NAME")
+	# 1. Extract name globally
 	name_match = re.search(r"(?:i'?m|my name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", user_input, re.IGNORECASE)
 	if name_match:
 		extracted["name"] = name_match.group(1).strip()
 
-	# 4. Extract service (match common service words)
+	# 2. Extract all service-stylist-date-time chunks
 	services = ["haircut", "hair color", "manicure", "pedicure", "facial", "massage"]
-	for service in services:
-		if service in user_input.lower():
-			if memory.collected_info.get("service") and memory.collected_info["service"] != service:
-				# If new service is different from previous, reset dependent fields
-				memory.collected_info["stylist"] = None
-				memory.collected_info["date"] = None
-				memory.collected_info["time"] = None
-			extracted["service"] = service
-			break
+	services_pattern = '|'.join(re.escape(s) for s in services)
+	stylist_pattern = r"(?:with|stylist)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)"
+	date_time_matches = search_dates(user_input, settings={"PREFER_DATES_FROM": "future"})
 
-	# 5. Extract stylist (look for "with NAME", "stylist NAME")
-	stylist_match = re.search(r"(?:with|stylist)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", user_input, re.IGNORECASE)
-	if stylist_match:
-		extracted["stylist"] = stylist_match.group(1).strip()
+	# Split by ' and ', ' & ', or ',' for multiple appointments
+	parts = re.split(r'\s+(?:and|&|,)\s+', user_input)
+
+	for part in parts:
+		appointment = {}
+		
+		# Service
+		for service in services:
+			if service in part.lower():
+				appointment["service"] = service
+				break
+
+		# Stylist
+		stylist_match = re.search(stylist_pattern, part, re.IGNORECASE)
+		if stylist_match:
+			appointment["stylist"] = stylist_match.group(1).strip()
+
+		# Date & Time (search from whole input, then assign closest)
+		if date_time_matches:
+			for dt_text, dt_obj in date_time_matches:
+				if dt_text in part:
+					if dt_obj.hour != 0 or dt_obj.minute != 0:
+						appointment["time"] = dt_obj.strftime("%H:%M")
+					appointment["date"] = dt_obj.strftime("%Y-%m-%d")
+					break
+
+		if appointment:
+			extracted["appointments"].append(appointment)
 
 	return extracted
 
@@ -121,7 +137,7 @@ def get_conversation_summary(session_id: str) -> Dict:
 		return {
 			"session_id": session_id,
 			"state": memory.conversation_state,
-			"collected_info": memory.collected_info,
+			"collected_info": memory.current_booking,
 			"message_count": len(memory.messages),
 			"is_complete": memory.is_complete()
 		}
@@ -183,25 +199,30 @@ def generate_response_with_memory(user_input: str, session_id: str) -> str:
 		message = chat_completion.choices[0].message
 		print("messagemessagemessage------------------", message)
 
-		print("666666666666666666666666666666666666666666666666666666666666666666666666666666=========================>",memory.collected_info)
+		print("666666666666666666666666666666666666666666666666666666666666666666666666666666=========================>",memory.current_booking)
 
 		# Handle tool calls
 		if message.tool_calls:
 			print("🚨 Tool call was requested🚨", message.tool_calls)
 
-			tool_call = message.tool_calls[0]
-			tool_name = tool_call.function.name
-			tool_args = json.loads(tool_call.function.arguments)
+			for tool_call in message.tool_calls:
+				tool_name = tool_call.function.name
+				tool_args = json.loads(tool_call.function.arguments)
+				result = handle_tool_call(tool_name, tool_args)
 
-			print("tool_args-----------", tool_args)
+			messages.append({
+				"role": "tool",
+				"tool_call_id": tool_call.id,
+				"content": result
+			})
 
 			# Execute the tool function
 			if tool_name in tools:
-				tool_function = tools[tool_name].get("function")
-				if tool_function:
-					result = tool_function(**tool_args)
-				else:
-					result = handle_tool_call(tool_name, tool_args) # Fallback to existing handler
+				# tool_function = tools[tool_name].get("function")
+				# if tool_function:
+				# 	result = tool_function(**tool_args)
+				# else:
+				# 	result = handle_tool_call(tool_name, tool_args) # Fallback to existing handler
 
 				# Generate human-readable reply
 				if tool_name == "book_salon":

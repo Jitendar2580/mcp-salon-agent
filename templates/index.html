@@ -3,44 +3,96 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Smart AI Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salon Booking Assistant</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body {
-            background-color: #f4f6f9;
-            font-family: 'Segoe UI', sans-serif;
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            padding: 20px;
         }
 
         .chat-container {
             max-width: 80%;
-            margin: 50px auto;
-            background: #fff;
-            border-radius: 16px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            height: 90vh;
+            min-height: 80%;
         }
 
         .chat-header {
-            font-weight: bold;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            padding: 20px;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .chat-header h4 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 1.3rem;
+        }
+
+        .salon-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
         }
 
         .chat-log {
-            padding: 20px;
-            height: 650px;
+            padding: 25px;
+            flex: 1;
             overflow-y: auto;
+            background: #f8f9fa;
+            scroll-behavior: smooth;
+        }
+
+        .chat-log::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-log::-webkit-scrollbar-track {
+            background: #e9ecef;
+            border-radius: 10px;
+        }
+
+        .chat-log::-webkit-scrollbar-thumb {
+            background: #ff6b6b;
+            border-radius: 10px;
         }
 
         .message {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             display: flex;
-            gap: 10px;
+            gap: 12px;
             align-items: flex-start;
+            animation: slideInUp 0.4s ease-out;
         }
 
         .message.user {
@@ -48,57 +100,93 @@
         }
 
         .message.user .msg {
-            background-color: #d1e7dd;
-            color: #0f5132;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            border-radius: 25px 25px 5px 25px;
+        }
+
+        .message.bot {
+            justify-content: flex-start;
         }
 
         .message.bot .msg {
-            background-color: #e2e3e5;
-            color: #41464b;
+            background: white;
+            color: #2c3e50;
+            border-radius: 25px 25px 25px 5px;
+            border: 2px solid #e9ecef;
         }
 
         .msg {
-            padding: 10px 15px;
-            border-radius: 20px;
-            max-width: 75%;
+            padding: 15px 20px;
+            max-width: 70%;
             word-wrap: break-word;
-            animation: fadeIn 0.3s ease-in-out;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            position: relative;
         }
 
         .msg code,
         .msg pre {
-            background-color: #f8f9fa;
-            border-radius: 6px;
-            padding: 8px;
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            padding: 10px;
             display: block;
-            margin-top: 5px;
+            margin: 8px 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .message.user .msg code,
+        .message.user .msg pre {
+            background-color: rgba(255, 255, 255, 0.2);
         }
 
         .chat-input {
             display: flex;
-            border-top: 1px solid #dee2e6;
-            padding: 15px;
-            background-color: #fafafa;
+            gap: 15px;
+            padding: 25px;
+            background: white;
+            border-top: 1px solid #e9ecef;
         }
 
         .chat-input input {
             flex: 1;
-            border-radius: 30px;
-            padding: 10px 20px;
+            border-radius: 25px;
+            padding: 15px 20px;
+            border: 2px solid #e9ecef;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            border-color: #ff6b6b;
+            box-shadow: 0 0 0 0.2rem rgba(255, 107, 107, 0.25);
         }
 
         .chat-input button {
-            margin-left: 10px;
-            border-radius: 30px;
-            padding: 10px 20px;
+            border-radius: 25px;
+            padding: 15px 25px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            border: none;
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            min-width: 100px;
         }
 
-        @keyframes fadeIn {
+        .chat-input button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.3);
+        }
+
+        .chat-input button:active {
+            transform: translateY(0);
+        }
+
+        @keyframes slideInUp {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(20px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -107,68 +195,209 @@
 
         .info-icon {
             cursor: pointer;
+            position: relative;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .info-icon:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
         }
 
         .info-text {
             display: none;
-            width: 500px;
             position: absolute;
             right: 0;
-            top: 100%;
-            background: #333;
+            top: 50px;
+            width: 450px;
+            background: #2c3e50;
             color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            z-index: 100;
+            padding: 20px;
+            border-radius: 15px;
+            z-index: 1000;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            line-height: 1.5;
+        }
+
+        .info-text::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            right: 15px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 8px solid #2c3e50;
         }
 
         .info-icon:hover .info-text {
             display: block;
+            animation: fadeInScale 0.3s ease-out;
+        }
+
+        @keyframes fadeInScale {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-5px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .service-tag {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin: 0 2px;
+            display: inline-block;
+        }
+
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 15px 20px;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            30% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .chat-container {
+                height: 90vh;
+                border-radius: 15px;
+                max-width: 100%;
+            }
+            
+            .chat-header {
+                padding: 15px;
+            }
+            
+            .chat-header h4 {
+                font-size: 1.1rem;
+            }
+            
+            .chat-log {
+                padding: 15px;
+            }
+            
+            .msg {
+                max-width: 85%;
+                padding: 12px 16px;
+            }
+            
+            .chat-input {
+                padding: 15px;
+                gap: 10px;
+            }
+            
+            .chat-input input {
+                padding: 12px 16px;
+                font-size: 16px;
+            }
+            
+            .chat-input button {
+                padding: 12px 20px;
+                min-width: 80px;
+            }
+            
+            .info-text {
+                width: 280px;
+                right: -10px;
+            }
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 30px;
+            color: #6c757d;
+        }
+
+        .welcome-message i {
+            font-size: 3rem;
+            color: #ff6b6b;
+            margin-bottom: 15px;
         }
     </style>
 </head>
 
 <body>
     <div class="chat-container">
-        <div class="chat-header d-flex justify-content-between pe-5 bg-primary p-2 text-white">
-            <h4>🤖 Smart AI Assistant</h4>
-            <div class="info-icon" style="position: relative;">
-                <i class="fa fa-info-circle mt-2 fs-5"></i>
+        <div class="chat-header">
+            <h4>
+                <div class="salon-icon">
+                    <i class="fas fa-cut"></i>
+                </div>
+                Salon Booking Assistant
+            </h4>
+            <div class="info-icon">
+                <i class="fas fa-info-circle"></i>
                 <div class="info-text">
-                    <p>
-                        You are a helpful AI assistant with access to the following four specialized tools.
-                    </p>
-                    <p>You MUST decide which tool to invoke based on the user's question. Choose only one tool per
-                        question unless explicitly asked to do multiple things.</p>
-                    <p>
-                        Each tool is described below. Think carefully before calling a tool. Always return the result
-                        from the tool.
-                    </p>
-                    <p>
-                        ---
-                    </p>
-                    <p>
-                        🔢 Solve equations, arithmetic, algebra, geometry problems
-                    </p>
-                    <p>
-                        ☁️ Get current weather conditions for any location
-                    </p>
-                    <p>
-                        📘 Explain concepts in science, history, programming and more
-                    </p>
-                    <p>
-                        ✈️ Get customized trip itineraries and recommendations
-                    </p>
-                    <p class="note">Note: I can help Email send on provided Email.</p>
-
+                    <p><strong>💇‍♀️ Salon Booking Assistant</strong></p>
+                    <p>I'm here to help you with:</p>
+                    <p>✨ <span class="service-tag">Appointments</span> Book your next salon visit</p>
+                    <p>💅 <span class="service-tag">Services</span> Browse our nail, hair & beauty treatments</p>
+                    <p>👥 <span class="service-tag">Stylists</span> Find the perfect stylist for you</p>
+                    <p>⏰ <span class="service-tag">Availability</span> Check real-time appointment slots</p>
+                    <p>💰 <span class="service-tag">Pricing</span> Get instant quotes for services</p>
+                    <p><em>Just ask me anything about booking your salon appointment!</em></p>
                 </div>
             </div>
         </div>
-        <div id="chatLog" class="chat-log"></div>
+        <div id="chatLog" class="chat-log">
+            <div class="welcome-message">
+                <i class="fas fa-sparkles"></i>
+                <h5>Welcome to our Salon! ✨</h5>
+                <p>I'm your personal booking assistant. Ask me about appointments, services, or our amazing stylists!</p>
+            </div>
+        </div>
         <form id="chatForm" class="chat-input">
-            <input type="text" id="questionInput" class="form-control" placeholder="Type your question..."
-                autocomplete="off">
-            <button type="submit" class="btn btn-primary">Send</button>
+            <input type="text" id="questionInput" class="form-control" 
+                   placeholder="Ask me about appointments, services, or availability..." 
+                   autocomplete="off">
+            <button type="submit" class="btn">
+                <i class="fas fa-paper-plane"></i>
+            </button>
         </form>
     </div>
 
@@ -177,12 +406,19 @@
         const questionInput = document.getElementById("questionInput");
         const chatLog = document.getElementById("chatLog");
 
-        function appendMessage(sender, text) {
+        function appendMessage(sender, text, isTyping = false) {
             const msgDiv = document.createElement("div");
             msgDiv.className = `message ${sender}`;
-            msgDiv.innerHTML = `<div class="msg">${marked.parse(text)}</div>`;
+            
+            if (isTyping) {
+                msgDiv.innerHTML = `<div class="msg"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
+            } else {
+                msgDiv.innerHTML = `<div class="msg">${marked.parse(text)}</div>`;
+            }
+            
             chatLog.appendChild(msgDiv);
             chatLog.scrollTop = chatLog.scrollHeight;
+            return msgDiv;
         }
 
         form.addEventListener("submit", async (e) => {
@@ -190,25 +426,56 @@
             const message = questionInput.value.trim();
             if (!message) return;
 
+            // Clear welcome message if it exists
+            const welcomeMsg = document.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+
             appendMessage("user", message);
             questionInput.value = "";
 
-            appendMessage("bot", "_Thinking..._");
+            const typingMsg = appendMessage("bot", "", true);
 
             try {
                 const res = await fetch('api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message, user_input: message, session_id: "default" })
+                    body: JSON.stringify({ 
+                        message, 
+                        user_input: message, 
+                        session_id: "salon_booking",
+                        context: "salon_appointment_booking"
+                    })
                 });
                 const data = await res.json();
-                chatLog.lastChild.remove();
+                typingMsg.remove();
                 appendMessage("bot", data.response);
             } catch (err) {
-                chatLog.lastChild.remove();
-                appendMessage("bot", "❌ Failed to fetch response. Please try again.");
+                typingMsg.remove();
+                appendMessage("bot", "💫 Sorry, I'm having trouble connecting right now. Please try again in a moment!");
             }
         });
+
+        // Auto-focus input
+        questionInput.focus();
+
+        // Placeholder suggestions
+        const suggestions = [
+            "Book a haircut appointment",
+            "What nail services do you offer?",
+            "Show me available times today",
+            "How much is a full highlights?",
+            "Cancel my appointment"
+        ];
+
+        let suggestionIndex = 0;
+        setInterval(() => {
+            if (questionInput.value === "" && document.activeElement !== questionInput) {
+                questionInput.placeholder = suggestions[suggestionIndex];
+                suggestionIndex = (suggestionIndex + 1) % suggestions.length;
+            }
+        }, 3000);
     </script>
 </body>
 
