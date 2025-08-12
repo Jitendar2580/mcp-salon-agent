@@ -105,6 +105,7 @@ def reschedule_appointment(name: str, date: str, time: str, new_date: str, new_t
 		# Update date and time
 		appointment.date = new_date
 		appointment.time = new_time
+		appointment.updated_at = datetime.now()
 		session.commit()
 		return f"✅ Appointment for {name} has been rescheduled to {new_date} at {new_time}."
 	except Exception as e:
