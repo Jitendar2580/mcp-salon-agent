@@ -179,9 +179,11 @@ def generate_response_with_memory(user_input: str, session_id: str) -> str:
         response = ""
         if message.content:
             try:
-                content_json = json.loads(message.content)
+                # Remove code block fences if present
+                clean_content = re.sub(r"^```(?:json)?|```$", "", message.content.strip(), flags=re.MULTILINE).strip()
+                
+                content_json = json.loads(clean_content)
 
-                # Update booking_data internally
                 booking_data = content_json.get("booking_data")
                 if booking_data:
                     for key, value in booking_data.items():

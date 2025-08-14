@@ -1,11 +1,10 @@
-import os
-import requests
 from database.connection import SessionLocal
 from database.model import Appointment, Customer, Service, Stylist
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Dict, List, Union
 from sqlalchemy import func ,text 
+from utils.util import is_stylist_available_on_day 
 
 
 
@@ -85,35 +84,57 @@ def cancel_appointment(name: str, date: str, time: str) -> str:
 		session.close()
 
 def reschedule_appointment(name: str, date: str, time: str, new_date: str, new_time: str) -> str:
-	session = SessionLocal()
-	try:
-		# Find existing appointment
-		customer = session.query(Customer).filter(func.lower(Customer.name) == name.lower()).first()
+    session = SessionLocal()
+    try:
+        # Find customer
+        customer = session.query(Customer).filter(func.lower(Customer.name) == name.lower()).first()
+        if not customer:
+            return f"❌ No customer found with the name '{name}'."
 
-		appointment = session.query(Appointment).filter_by(
-			customer_id=customer.id,
-			date=date,
-			time=time
-		).first()
+        # Find the original appointment
+        appointment = session.query(Appointment).filter_by(
+            customer_id=customer.id,
+            date=date,
+            time=time
+        ).first()
 
-		# appointment = session.query(Appointment).filter_by(name=name, date=date, time=time).first()
-		print(f"Rescheduling appointment: {appointment}")
+        if not appointment:
+            return f"❌ No appointment found for {name} on {date} at {time}."
 
-		if not appointment:
-			return f"❌ No appointment found for {name} on {date} at {time}."
+        # Find the stylist for this appointment
+        stylist = session.query(Stylist).filter(Stylist.id == appointment.stylist_id).first()
+        if not stylist:
+            return f"❌ No stylist found for the existing appointment."
 
-		# Update date and time
-		appointment.date = new_date
-		appointment.time = new_time
-		appointment.updated_at = datetime.now()
-		session.commit()
-		return f"✅ Appointment for {name} has been rescheduled to {new_date} at {new_time}."
-	except Exception as e:
-		print(f"Error rescheduling appointment ------------------>: {e}")
-		return f"❌ Failed to reschedule appointment: {e}"
-	finally:
-		session.close()
+        # ✅ Check if stylist is available at the new date/time
+        stylist_booking_conflict = session.query(Appointment).filter(
+            Appointment.stylist_id == stylist.id,
+            Appointment.date == new_date,
+            Appointment.time == new_time,
+            Appointment.id != appointment.id  # exclude current appointment
+        ).first()
 
+        if stylist_booking_conflict:
+            return f"❌ {stylist.name} is already booked on {new_date} at {new_time}."
+
+        # OPTIONAL: Check stylist availability table (if you have one)
+        if hasattr(stylist, 'availability') and not stylist.availability:
+            return f"❌ {stylist.name} is currently unavailable for bookings."
+
+        # Update appointment with new date/time
+        appointment.date = new_date
+        appointment.time = new_time
+        appointment.updated_at = datetime.now()
+        session.commit()
+
+        return f"✅ Appointment for {name} with {stylist.name} has been rescheduled to {new_date} at {new_time}."
+
+    except Exception as e:
+        print(f"Error rescheduling appointment ------------------>: {e}")
+        return f"❌ Failed to reschedule appointment: {e}"
+
+    finally:
+        session.close()
 # def show_appointments(name: str = None, date: str = None, time: str = None) -> str:
 # 	session = SessionLocal()
 # 	try:
@@ -260,46 +281,103 @@ def get_services(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 # 	finally:
 # 		session.close()
 
-def get_stylist(query: str = None) -> Dict[str, Union[List[Dict], str]]:
-	session = SessionLocal()
-	try:
+def get_stylist(query: str = None, date: str = None, time: str = None) -> Dict[str, Union[List[Dict], str]]:
+    session = SessionLocal()
+    try:
+        # Step 1: Filter by name similarity if query given
+        if query:
+            matched_stylists = session.query(Stylist).filter(
+                text("similarity(name, :query) > 0.3")
+            ).params(query=query).order_by(
+                text("similarity(name, :query) DESC")
+            ).all()
+        else:
+            matched_stylists = session.query(Stylist).all()
 
-		if query:
-			matched_stylists = session.query(Stylist).filter(
-				text("similarity(name, :query) > 0.3")
-			).params(query=query).order_by(
-				text("similarity(name, :query) DESC")
-			).all()
-		else:
-			matched_stylists = session.query(Stylist).all()
-   
-		if not matched_stylists:
-			polite_message = (
-				f"Oops! No stylists found matching '{query}'. Please try a different name."
-				if query else
-				"Looks like we don't have any stylists listed right now. Please check back later!"
-			)
-			return {
-				'stylists': [],
-				'message': polite_message,
-				'status': 'not_found'
-			}
+        if query and not matched_stylists:
+            return {
+                'stylists': [],
+                'message': f"Sorry, we couldn’t find any stylist named '{query}'.",
+                'status': 'not_found'
+            }
 
-		print(f"Matched stylists for '{query}': {[s.name for s in matched_stylists]}")
+        # Step 2: Filter by day availability if date given
+        if date:
+            try:
+                target_day = datetime.strptime(date, "%Y-%m-%d").strftime("%a")
+                day_filtered = [
+                    s for s in matched_stylists
+                    if is_stylist_available_on_day(s.availability, target_day)
+                ]
+            except ValueError:
+                return {
+                    'stylists': [],
+                    'message': f"Invalid date format: {date}. Please use YYYY-MM-DD.",
+                    'status': 'error'
+                }
 
-		serialized_stylists = [
-			{"id": s.id, "name": s.name}
-			for s in matched_stylists
-		]
+            if not day_filtered:
+                return {
+                    'stylists': [],
+                    'message': f"'{query}' is not available on {date}.",
+                    'status': 'not_available'
+                }
 
-		return {
-			'stylists': serialized_stylists,
-			'message': f"Found {len(serialized_stylists)} stylist(s)" + (f" matching '{query}'" if query else ''),
-			'status': 'success'
-		}
-	finally:
-		session.close()
+            matched_stylists = day_filtered
 
+        # Step 3: Filter out stylists with a conflicting appointment
+        if date and time:
+            available_stylists = []
+            conflict_found = False
+
+            for stylist in matched_stylists:
+                has_conflict = session.query(Appointment).filter(
+                    Appointment.stylist_id == stylist.id,
+                    Appointment.date == date,
+                    Appointment.time == time
+                ).first() is not None
+
+                if has_conflict:
+                    conflict_found = True
+                else:
+                    available_stylists.append(stylist)
+
+            if not available_stylists and conflict_found:
+                return {
+                    'stylists': [],
+                    'message': f"Sorry, {query} is already booked on {date} at {time}. Would you like to pick another time?",
+                    'status': 'booked'
+                }
+
+            matched_stylists = available_stylists
+
+        # Step 4: If still none found
+        if not matched_stylists:
+            return {
+                'stylists': [],
+                'message': "No stylists available for the requested time.",
+                'status': 'not_found'
+            }
+
+        # Step 5: Serialize output
+        serialized_stylists = [
+            {"id": s.id, "name": s.name, "availability": s.availability}
+            for s in matched_stylists
+        ]
+
+        return {
+            'stylists': serialized_stylists,
+            'message': f"Found {len(serialized_stylists)} stylist(s)"
+                       + (f" matching '{query}'" if query else '')
+                       + (f" available on {date}" if date else '')
+                       + (f" at {time}" if time else ''),
+            'status': 'success'
+        }
+
+    finally:
+        session.close()
+        
+        
 # def get_customers(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 # 	session = SessionLocal()
 # 	try:
@@ -386,19 +464,6 @@ def get_customers(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 		session.close() 
 
 
-def get_weather(city: str) -> str:
-	api_key = os.getenv("WEATHER_API_KEY")
-	url = f"http://api.weatherapi.com/v1/current.json?key={api_key}&q={city}"
-
-	try:
-		res = requests.get(url)
-		data = res.json()
-		return f"{data['location']['name']}: {data['current']['temp_c']}°C, {data['current']['condition']['text']}"
-	except Exception as e:
-		return f"Weather fetch failed: {e}"
- 
-
-
 
 # tools definition
 tools = {
@@ -476,19 +541,30 @@ tools = {
 		"function": get_services
 	},
 	"get_stylist": {
-		"description": "Get the list of available stylists, optionally filtered by a search query.",
-		"parameters": {
-			"type": "object",
-			"properties": {
-				"query": {
-					"type": "string",
-					"description": "Optional search string to filter stylists by name or expertise"
-				}
-			},
-			"required": ['query']
-		},
-		"function": get_stylist
-	},
+        "description": (
+            "Check available stylists by name, date, and time for booking appointments. "
+            "Use this whenever the user mentions a stylist name, booking time, or wants to "
+            "see who is available on a specific date."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Name of the stylist to search for"
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Date in YYYY-MM-DD format for checking availability"
+                },
+                "time": {
+                    "type": "string",
+                    "description": "Time in HH:MM 24-hour format for checking availability"
+                }
+            }
+        },
+        "function": get_stylist
+    },
 	"get_customers": {
 		"description": "Get the list of customers, optionally filtered by a search query.",
 		"parameters": {
@@ -502,22 +578,5 @@ tools = {
 			"required": ['query']
 		},
 		"function": get_customers
-	},
-
-
-
-	"weather": {
-		"description": "Get current weather information for a city.",
-		"parameters": {
-			"type": "object",
-			"properties": {
-				"city": {
-					"type": "string",
-					"description": "City name (e.g., Tokyo, Paris)"
-				}
-			},
-			"required": ["city"]
-		},
-		"function": get_weather,
 	}, 
 }
