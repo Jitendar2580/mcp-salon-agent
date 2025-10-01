@@ -3,8 +3,8 @@ from database.model import Appointment, Customer, Service, Stylist
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Dict, List, Union
-from sqlalchemy import func ,text 
-from utils.util import is_stylist_available_on_day 
+from sqlalchemy import func ,text , or_
+from utils.util import is_stylist_available_on_day, one_substitution_like_filters 
 
 
 
@@ -201,21 +201,14 @@ def get_services(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 	session = SessionLocal()
 	try:
 		if query:
-			matched_services = session.query(Service).filter(
-				text("similarity(name, :query) > 0.3")
-			).params(query=query).order_by(
-				text("similarity(name, :query) DESC")
-			).all()
+			q = session.query(Service)
+			conds = one_substitution_like_filters(Service.name, query, substring=False)
+			if conds:
+				matched_services = q.filter(or_(*conds)).all()
+			else:
+				matched_services = []
 		else:
 			matched_services = session.query(Service).all()
-   
-		# if query:
-		# 	like_pattern = f"%{query}%"
-		# 	matched_services = session.query(Customer).filter(
-		# 		Customer.name.ilike(like_pattern)  # Use .like for MySQL if ilike not supported
-		# 	).all()
-		# else:
-		# 	matched_services = session.query(Customer).all()
 
 		if not matched_services:
 			polite_message = (
@@ -229,7 +222,7 @@ def get_services(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 				'status': 'not_found'
 			}
 
-		print(f"ILIKE matched services for '{query}': {[s.name for s in matched_services]}")
+		print(f"Matched services for '{query}': {[s.name for s in matched_services]}")
 
 		serialized_services = [
 			{"id": s.id, "name": s.name}
@@ -243,43 +236,7 @@ def get_services(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 
 	finally:
 		session.close()
-
-# def get_stylist(query: str = None) -> Dict[str, Union[List[Dict], str]]:
-# 	session = SessionLocal()
-# 	try:
-# 		if query:
-# 			stylists = session.query(Stylist).filter(Stylist.name.ilike(f"%{query}%")).all()
-# 		else:
-# 			stylists = session.query(Stylist).all()
-
-# 		if query:
-# 			query_lower = query.lower()
-# 			stylists = [s for s in stylists if query_lower in s.name.lower()]
-
-# 		if not stylists:
-# 			polite_message = (
-# 				f"Oops! No stylists found matching '{query}'. Please try a different name."
-# 				if query else
-# 				"Looks like we don't have any stylists listed right now. Please check back later!"
-# 			)
-# 			return {
-# 				'stylists': [],
-# 				'message': polite_message,
-# 				'status': 'not_found'
-# 			}
-# 		return {
-# 			'stylists': [
-# 				{
-# 					'id': s.id,
-# 					'name': s.name, 
-# 					# Add more fields as needed
-# 				} for s in stylists
-# 			],
-# 			'message': f"Found {len(stylists)} stylist(s)" + (f" matching '{query}'" if query else ''),
-# 			'status': 'success'
-# 		}
-# 	finally:
-# 		session.close()
+ 
 
 def get_stylist(query: str = None, date: str = None, time: str = None) -> Dict[str, Union[List[Dict], str]]:
     session = SessionLocal()
@@ -377,56 +334,19 @@ def get_stylist(query: str = None, date: str = None, time: str = None) -> Dict[s
     finally:
         session.close()
         
-        
-# def get_customers(query: str = None) -> Dict[str, Union[List[Dict], str]]:
-# 	session = SessionLocal()
-# 	try:
-# 		if query:
-# 			customers = session.query(Customer).filter(Customer.name.ilike(f"%{query}%")).all()
-# 		else:
-# 			customers = session.query(Customer).all()
-
-# 		if query:
-# 			query_lower = query.lower()
-# 			customers = [c for c in customers if query_lower in c.name.lower()]
-
-# 		if not customers:
-# 			polite_message = (
-# 				f"Sorry, we couldn't find any customers matching '{query}'. Try checking the spelling!"
-# 				if query else
-# 				"No customers found in our records at the moment."
-# 			)
-# 			return {
-# 				'customers': [],
-# 				'message': polite_message,
-# 				'status': 'not_found'
-# 			}
-
-# 		return {
-# 			'customers': [
-# 				{
-# 					'id': c.id,
-# 					'name': c.name,
-# 					'email': c.email,
-# 					'phone': c.phone,
-# 					# Add more fields as needed
-# 				} for c in customers
-# 			],
-# 			'message': f"Found {len(customers)} customer(s)" + (f" matching '{query}'" if query else ''),
-# 			'status': 'success'
-# 		}
-# 	finally:
-# 		session.close()
 
 def get_customers(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 	session = SessionLocal()
 	try:
 		if query:
-			matched_customers = session.query(Customer).filter(
-				text("similarity(name, :query) > 0.3")
-			).params(query=query).order_by(
-				text("similarity(name, :query) DESC")
-			).all()
+			q = session.query(Customer)
+			# Build LIKE patterns
+			conds = one_substitution_like_filters(Customer.name, query, substring=False)
+
+			if conds:
+				matched_customers = q.filter(or_(*conds)).all()
+			else:
+				matched_customers = []
 		else:
 			matched_customers = session.query(Customer).all()
 
@@ -464,9 +384,28 @@ def get_customers(query: str = None) -> Dict[str, Union[List[Dict], str]]:
 		session.close() 
 
 
-
+def get_greeting() -> dict:
+    return {
+        'message': f"Welcome to YOYO Salon! 💇✨ We're excited to help you with your appointment.",
+        'status': "success"
+    }
+    
+    
+    
+    
 # tools definition
 tools = {
+     "get_greeting": {
+        "description": "Generate a personalized greeting message for salon customers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Client's name"}
+            },
+            "required": []
+        },
+        "function": get_greeting
+    },
 	"book_salon": {
 		"description": "Book a salon appointment with name, date, time, stylist, and service.",
 		"parameters": {
