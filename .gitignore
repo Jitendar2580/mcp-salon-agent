@@ -46,6 +46,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+.bash_history
 
 # Installer logs
 pip-log.txt
