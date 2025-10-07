@@ -9,5 +9,9 @@ aiosmtplib
 markdown2
 asyncpg
 
+dateparser
+openai
+jinja2
+
 
 # rapidfuzz
