@@ -8,6 +8,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
     <style>
         * {
             margin: 0;
@@ -187,6 +189,7 @@
                 opacity: 0;
                 transform: translateY(20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -249,6 +252,7 @@
                 opacity: 0;
                 transform: scale(0.9) translateY(-5px);
             }
+
             to {
                 opacity: 1;
                 transform: scale(1) translateY(0);
@@ -289,10 +293,14 @@
         }
 
         @keyframes typing {
-            0%, 60%, 100% {
+
+            0%,
+            60%,
+            100% {
                 transform: scale(0.8);
                 opacity: 0.5;
             }
+
             30% {
                 transform: scale(1);
                 opacity: 1;
@@ -303,45 +311,45 @@
             body {
                 padding: 10px;
             }
-            
+
             .chat-container {
                 height: 90vh;
                 border-radius: 15px;
                 max-width: 100%;
             }
-            
+
             .chat-header {
                 padding: 15px;
             }
-            
+
             .chat-header h4 {
                 font-size: 1.1rem;
             }
-            
+
             .chat-log {
                 padding: 15px;
             }
-            
+
             .msg {
                 max-width: 85%;
                 padding: 12px 16px;
             }
-            
+
             .chat-input {
                 padding: 15px;
                 gap: 10px;
             }
-            
+
             .chat-input input {
                 padding: 12px 16px;
                 font-size: 16px;
             }
-            
+
             .chat-input button {
                 padding: 12px 20px;
                 min-width: 80px;
             }
-            
+
             .info-text {
                 width: 280px;
                 right: -10px;
@@ -370,7 +378,7 @@
                     <i class="fas fa-cut"></i>
                 </div>
                 Salon Booking Assistant
-                <span style="font-size: 10px;margin-top: 12px;">Version 1.1.5</span>
+                <span style="font-size: 10px;margin-top: 12px;">Version 1.1.6</span>
             </h4>
             <div class="info-icon">
                 <i class="fas fa-info-circle"></i>
@@ -390,17 +398,40 @@
             <div class="welcome-message">
                 <i class="fas fa-sparkles"></i>
                 <h5>Welcome to our Salon! ✨</h5>
-                <p>I'm your personal booking assistant. Ask me about appointments, services, or our amazing stylists!</p>
+                <p>I'm your personal booking assistant. Ask me about appointments, services, or our amazing stylists!
+                </p>
             </div>
         </div>
         <form id="chatForm" class="chat-input">
-            <input type="text" id="questionInput" class="form-control" 
-                   placeholder="Ask me about appointments, services, or availability..." 
-                   autocomplete="off">
+            <input type="text" id="questionInput" class="form-control"
+                placeholder="Ask me about appointments, services, or availability..." autocomplete="off">
             <button type="submit" class="btn">
                 <i class="fas fa-paper-plane"></i>
             </button>
         </form>
+
+        <!-- Popup Modal -->
+        <div class="modal fade" id="responseModal" tabindex="-1" aria-labelledby="responseModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content rounded-4 shadow-lg border-0">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="responseModalLabel">
+                            Booking Confirmed
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body text-center p-4">
+                        <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                        <p id="responseModalText" class="fs-5 mb-0"></p>
+                    </div>
+                    <div class="modal-footer justify-content-center">
+                        <button type="button" class="btn btn-outline-success" data-bs-dismiss="modal">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -411,13 +442,13 @@
         function appendMessage(sender, text, isTyping = false) {
             const msgDiv = document.createElement("div");
             msgDiv.className = `message ${sender}`;
-            
+
             if (isTyping) {
                 msgDiv.innerHTML = `<div class="msg"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
             } else {
                 msgDiv.innerHTML = `<div class="msg">${marked.parse(text)}</div>`;
             }
-            
+
             chatLog.appendChild(msgDiv);
             chatLog.scrollTop = chatLog.scrollHeight;
             return msgDiv;
@@ -428,11 +459,8 @@
             const message = questionInput.value.trim();
             if (!message) return;
 
-            // Clear welcome message if it exists
             const welcomeMsg = document.querySelector('.welcome-message');
-            if (welcomeMsg) {
-                welcomeMsg.remove();
-            }
+            if (welcomeMsg) welcomeMsg.remove();
 
             appendMessage("user", message);
             questionInput.value = "";
@@ -443,29 +471,66 @@
                 const res = await fetch('api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message, 
-                        user_input: message, 
+                    body: JSON.stringify({
+                        message,
+                        user_input: message,
                         session_id: "salon_booking",
                         context: "salon_appointment_booking"
                     })
                 });
+
                 const data = await res.json();
                 typingMsg.remove();
-                appendMessage("bot", data.response);
+
+                appendMessage("bot", data.response.reply);
+
+                if (data.response.show_popup && data.response.popup_type) {
+                    showPopupModal(data.response.popup_type, data.response.reply, data.response.booking_data);
+                }
+
             } catch (err) {
                 typingMsg.remove();
-                appendMessage("bot", "💫 Sorry, I'm having trouble connecting right now. Please try again in a moment!");
+                appendMessage("bot", "Sorry, I'm having trouble connecting right now. Please try again in a moment!");
             }
         });
 
-        // Auto-focus input
+        // ✅ Popup logic
+        function showPopupModal(type, reply, bookingData) {
+            const modalTitle = document.getElementById("responseModalLabel");
+            const modalText = document.getElementById("responseModalText");
+
+            switch (type) {
+                case "booking_success":
+                    modalTitle.textContent = "Booking Confirmed!";
+                    modalText.textContent = reply || "Your booking has been successfully made!";
+                    document.querySelector(".modal-header").className = "modal-header bg-success text-white";
+                    break;
+                case "cancel_success":
+                    modalTitle.textContent = "Appointment Cancelled";
+                    modalText.textContent = reply || "Your appointment has been cancelled.";
+                    document.querySelector(".modal-header").className = "modal-header bg-danger text-white";
+                    break;
+                case "reschedule_success":
+                    modalTitle.textContent = "Appointment Rescheduled";
+                    modalText.textContent = reply || "Your appointment has been rescheduled.";
+                    document.querySelector(".modal-header").className = "modal-header bg-warning text-white";
+                    break;
+                default:
+                    modalTitle.textContent = "ℹNotification";
+                    modalText.textContent = reply || "Here’s an update!";
+                    document.querySelector(".modal-header").className = "modal-header bg-primary text-white";
+                    break;
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById("responseModal"));
+            modal.show();
+        }
+
         questionInput.focus();
 
-        // Placeholder suggestions
         const suggestions = [
             "Book a haircut appointment",
-            "What nail services do you offer?",
+            "What haircut services do you offer?",
             "Show me available times today",
             "How much is a full highlights?",
             "Cancel my appointment"
