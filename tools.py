@@ -1,10 +1,7 @@
-# from database.connection import SessionLocal
-from database.model import Appointment, Customer, Service, Stylist
+# from database.connection import SessionLocal 
 from dotenv import load_dotenv
 from datetime import datetime
-from typing import Dict, List, Union
-from sqlalchemy import func ,text , or_
-from utils.util import is_stylist_available_on_day, one_substitution_like_filters 
+from typing import Dict 
 
 
 
