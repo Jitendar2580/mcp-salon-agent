@@ -1,4 +1,4 @@
-from database.connection import SessionLocal
+# from database.connection import SessionLocal
 from database.model import Appointment, Customer, Service, Stylist
 from dotenv import load_dotenv
 from datetime import datetime
