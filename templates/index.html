@@ -528,21 +528,21 @@
 
         questionInput.focus();
 
-        const suggestions = [
-            "Book a haircut appointment",
-            "What haircut services do you offer?",
-            "Show me available times today",
-            "How much is a full highlights?",
-            "Cancel my appointment"
-        ];
+        // const suggestions = [
+        //     "Book a haircut appointment",
+        //     "What haircut services do you offer?",
+        //     "Show me available times today",
+        //     "How much is a full highlights?",
+        //     "Cancel my appointment"
+        // ];
 
-        let suggestionIndex = 0;
-        setInterval(() => {
-            if (questionInput.value === "" && document.activeElement !== questionInput) {
-                questionInput.placeholder = suggestions[suggestionIndex];
-                suggestionIndex = (suggestionIndex + 1) % suggestions.length;
-            }
-        }, 3000);
+        // let suggestionIndex = 0;
+        // setInterval(() => {
+        //     if (questionInput.value === "" && document.activeElement !== questionInput) {
+        //         questionInput.placeholder = suggestions[suggestionIndex];
+        //         suggestionIndex = (suggestionIndex + 1) % suggestions.length;
+        //     }
+        // }, 3000);
     </script>
 </body>
 

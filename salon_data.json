@@ -29,7 +29,8 @@
                 {"name": "Eva Green","specialties": ["Makeup Application","Bridal Package"]},
                 {"name": "Frank White","specialties": ["Children's Haircut","Beard Trim"]},
                 {"name": "Grace Brown","specialties": ["Blowout","Updo Hairstyling"]},
-                {"name": "Hank Miller","specialties": ["Scalp Treatment","Haircut"]}
+                {"name": "Hank Miller","specialties": ["Scalp Treatment","Haircut"]},
+                {"name": "John Doe","specialties": ["Haircut","Beard Trim"]}
             ]
         }
     ]
