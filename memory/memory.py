@@ -1,27 +1,33 @@
 
 from typing import Any, List, Optional, Tuple
 from dotenv import load_dotenv
-from tools import tools
-from typing import Dict
+from memory.prompt import get_system_prompt
+from tools import tools 
 import os
 import re
 import json
 import dateparser
 from datetime import datetime
 from openai import OpenAI
-from .prompt import system_instruction
+# from .prompt import system_instruction
 from enum import Enum
 from dateparser.search import search_dates
+import json
+import os
+import re
+from datetime import datetime
+from typing import Dict, Any
+
+from utils.util import load_json_file
 
 load_dotenv()
 
 # API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),  # Make sure to set your API key
+    api_key=os.getenv("OPENAI_API_KEY"),
 )
 
-
-# In-memory storage for appointments and conversations
+ 
 salon_appointments = {}
 conversation_memory = {}
 
@@ -30,15 +36,14 @@ class ConversationMemory:
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.messages = []
-        self.bookings = []  # Each booking is a dict with name, date, time, service, stylist
+        self.bookings = []
         self.current_booking = {
             "customer": None,
             "date": None,
             "time": None,
             "service": None,
             "stylist": None
-        }
-        # greeting, collecting, confirming, completed
+        } 
         self.conversation_state = "greeting"
 
     def add_message(self, role: str, content: str, name: str = None):
@@ -56,19 +61,15 @@ class ConversationMemory:
         Normalize incoming keys and update current_booking safely.
         Accepts 'name', 'customer_name', 'Name' etc and maps to 'customer'.
         """
-        try:
-            # Normalize key to lowercase string
+        try: 
             key_norm = str(key).strip().lower()
-
-            # Map common synonyms to our internal keys
+ 
             if key_norm in ("name", "customer_name", "full_name"):
                 key_norm = "customer"
-
-            # If value is a simple string, clean it
+ 
             if isinstance(value, str):
                 value = value.strip()
-
-            # If value is a list/dict, keep original behavior
+ 
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict):
@@ -137,25 +138,114 @@ def clear_conversation(session_id: str) -> bool:
         return True
     return False
 
+TODAY_DATE = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def generate_response_with_memory(user_input: str, session_id: str, reform_tool_output=False) -> str:
+
+def save_booking_to_file(booking_data: Dict[str, Any]) -> bool:
+    """Save confirmed booking to booking_data.json"""
+    try:
+        all_bookings = load_json_file("booking_data.json")
+        if not isinstance(all_bookings, list):
+            all_bookings = [all_bookings] if all_bookings else []
+        
+        all_bookings.append(booking_data)
+        
+        with open("booking_data.json", "w", encoding="utf-8") as f:
+            json.dump(all_bookings, f, ensure_ascii=False, indent=4)
+        
+        return True
+    except Exception as e:
+        print(f"Error saving booking: {e}")
+        return False
+
+def cancel_booking_from_file(booking_id: str = None, customer: str = None, date: str = None, stylist: str = None) -> tuple[bool, str]:
+    """Cancel a booking from booking_data.json"""
+    try:
+        all_bookings = load_json_file("booking_data.json")
+        if not isinstance(all_bookings, list):
+            all_bookings = []
+         
+        found_index = -1
+        found_booking = None
+        
+        for idx, booking in enumerate(all_bookings):
+            match = True
+            if booking_id and booking.get("booking_id") != booking_id:
+                match = False
+            if customer and booking.get("customer", "").lower() != customer.lower():
+                match = False
+            if date and booking.get("date") != date:
+                match = False
+            if stylist and booking.get("stylist", "").lower() != stylist.lower():
+                match = False
+            
+            if match:
+                found_index = idx
+                found_booking = booking
+                break
+        
+        if found_index == -1:
+            return False, "Booking not found"
+         
+        removed_booking = all_bookings.pop(found_index)
+         
+        with open("booking_data.json", "w", encoding="utf-8") as f:
+            json.dump(all_bookings, f, ensure_ascii=False, indent=4)
+        
+        return True, f"Cancelled: {removed_booking.get('service')} with {removed_booking.get('stylist')} on {removed_booking.get('date')} at {removed_booking.get('time')}"
+    
+    except Exception as e:
+        print(f"Error cancelling booking: {e}")
+        return False, str(e)
+
+def reschedule_booking_in_file(old_data: Dict[str, Any], new_date: str = None, new_time: str = None) -> tuple[bool, str]:
+    """Reschedule a booking in booking_data.json"""
+    try:
+        all_bookings = load_json_file("booking_data.json")
+        if not isinstance(all_bookings, list):
+            all_bookings = []
+         
+        found_index = -1
+        for idx, booking in enumerate(all_bookings):
+            if (booking.get("customer", "").lower() == old_data.get("customer", "").lower() and
+                booking.get("date") == old_data.get("date") and
+                booking.get("stylist", "").lower() == old_data.get("stylist", "").lower()):
+                found_index = idx
+                break
+        
+        if found_index == -1:
+            return False, "Original booking not found"
+         
+        if new_date:
+            all_bookings[found_index]["date"] = new_date
+        if new_time:
+            all_bookings[found_index]["time"] = new_time
+        
+        all_bookings[found_index]["updated_at"] = TODAY_DATE
+         
+        with open("booking_data.json", "w", encoding="utf-8") as f:
+            json.dump(all_bookings, f, ensure_ascii=False, indent=4)
+        
+        updated = all_bookings[found_index]
+        return True, f"Rescheduled to {updated.get('date')} at {updated.get('time')}"
+    
+    except Exception as e:
+        print(f"Error rescheduling booking: {e}")
+        return False, str(e)
+
+def is_booking_complete(booking: Dict[str, Any]) -> bool:
+    """Check if all required booking fields are filled"""
+    required_fields = ["customer", "service", "stylist", "date", "time"]
+    return all(booking.get(field) and booking.get(field) != "null" for field in required_fields)
+
+ 
+def generate_response_with_memory(user_input: str, session_id: str) -> str:
     memory = get_or_create_memory(session_id)
 
     if user_input.strip():
         memory.add_message("user", user_input)
 
-    openai_tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": tool_name,
-                "description": tool_info["description"],
-                "parameters": tool_info["parameters"]
-            }
-        }
-        for tool_name, tool_info in tools.items()
-    ]
-    # Take last 20 messages
+    
     recent_messages = [
         {
             "role": msg["role"],
@@ -164,6 +254,8 @@ def generate_response_with_memory(user_input: str, session_id: str, reform_tool_
         }
         for msg in memory.messages[-20:]
     ]
+     
+    system_instruction = get_system_prompt()
     messages = [system_instruction] + recent_messages
 
     try:
@@ -171,65 +263,112 @@ def generate_response_with_memory(user_input: str, session_id: str, reform_tool_
             model="gpt-4o",
             messages=messages,
             temperature=0.3,
-            tools=openai_tools,
-            tool_choice="auto"
+            response_format={"type": "json_object"}  # Force JSON mode
         )
 
         message = chat_completion.choices[0].message
-        print("messagemessagemessage------------------", message)
-        print("Before updating booking:", memory.current_booking)
+        print("\n" + "="*50)
+        print("Assistant message:", message.content)
+        print("Current booking state:", memory.current_booking)
+        print("="*50 + "\n")
 
-        # Extract reply text & booking_data
-        response = ""
-
-        content_json = None
+        # Parse response
+        response_text = ""
+        action = "collecting"
+        cancel_data = {}
+        reschedule_data = {}
+        
         if message.content:
-            try:
+            try: 
                 clean_content = re.sub(
-                    r"^```(?:json)?|```$", "", message.content.strip(), flags=re.MULTILINE).strip()
+                    r"^```(?:json)?|```$", "", message.content.strip(), flags=re.MULTILINE
+                ).strip()
                 content_json = json.loads(clean_content)
-                booking_data = content_json.get("booking_data")
+                
+                response_text = content_json.get("reply", "")
+                action = content_json.get("action", "collecting")
+                booking_data = content_json.get("booking_data", {})
+                cancel_data = content_json.get("cancel_data", {})
+                reschedule_data = content_json.get("reschedule_data", {})
+                 
                 if booking_data:
-                    for k, v in booking_data.items():
-                        if v is not None:
-                            memory.current_booking[k] = v
-                response = content_json.get("reply", "")
-            except (json.JSONDecodeError, AttributeError):
-                response = message.content.strip()
+                    for key, value in booking_data.items():
+                        if value and value != "null":
+                            memory.current_booking[key] = value
+                
+                print(f"📍 Action detected by LLM: {action}")
+                print(f"📋 Updated booking: {memory.current_booking}")
+                print(f"🗑️ Cancel data: {cancel_data}")
+                print(f"🔄 Reschedule data: {reschedule_data}")
+                
+            except (json.JSONDecodeError, AttributeError) as e:
+                print(f"⚠️ JSON parse error: {e}")
+                print(f"Raw content: {message.content}")
+                response_text = message.content.strip()
+                action = "collecting"
+ 
+        memory.add_message("assistant", response_text)
+ 
+        if action == "confirm_ready" and is_booking_complete(memory.current_booking):
+            memory.current_booking["booking_id"] = f"BK{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            memory.current_booking["created_at"] = TODAY_DATE
+            memory.current_booking["status"] = "confirmed"
+             
+            if save_booking_to_file(memory.current_booking.copy()):
+                print("✅ Booking confirmed and saved to booking_data.json")
+                print(f"✅ Saved booking: {memory.current_booking}")
+                 
+                memory.current_booking = {
+                    "customer": None,
+                    "service": None,
+                    "stylist": None,
+                    "date": None,
+                    "time": None
+                }
+                print("🔄 Booking data cleared for next session")
+            else:
+                return "⚠️ There was an error saving your booking. Please try again."
+ 
+        elif action == "cancel_ready" and cancel_data:
+            success, message_text = cancel_booking_from_file(
+                booking_id=cancel_data.get("booking_id"),
+                customer=cancel_data.get("customer"),
+                date=cancel_data.get("date"),
+                stylist=cancel_data.get("stylist")
+            )
+            
+            if success:
+                print(f"✅ {message_text}")
+            else:
+                print(f"❌ Cancellation failed: {message_text}")
+                return f"⚠️ Could not cancel booking: {message_text}"
+ 
+        elif action == "reschedule_ready" and reschedule_data:
+            old_data = {
+                "customer": reschedule_data.get("old_customer"),
+                "date": reschedule_data.get("old_date"),
+                "stylist": reschedule_data.get("old_stylist")
+            }
+            
+            success, message_text = reschedule_booking_in_file(
+                old_data=old_data,
+                new_date=reschedule_data.get("new_date"),
+                new_time=reschedule_data.get("new_time")
+            )
+            
+            if success:
+                print(f"✅ {message_text}")
+            else:
+                print(f"❌ Rescheduling failed: {message_text}")
+                return f"⚠️ Could not reschedule booking: {message_text}"
 
-        if message.tool_calls:
-            print("🚨 Tool call was requested🚨", message.tool_calls)
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
-                raw_result = tools[tool_name]["function"](**tool_args)
-
-                memory.add_message("function", str(raw_result), name=tool_name)
-
-                if not reform_tool_output:
-                    reform_prompt = (
-                        f"The tool returned this result:\n{raw_result}\n\n"
-                        "Please convert it into a clear, user-friendly reply for the user."
-                    )
-                    memory.add_message("user", reform_prompt)
-                    return generate_response_with_memory("", session_id, reform_tool_output=True)
-
-                else:
-                    for msg in reversed(memory.messages):
-                        if msg["role"] == "assistant":
-                            return msg["content"]
-                    return str(raw_result)
-
-        if content_json and "reply" in content_json and not reform_tool_output:
-            memory.add_message("function", json.dumps(
-                content_json), name="tool_output")
-            return generate_response_with_memory("", session_id, reform_tool_output=True)
-
-        memory.add_message("assistant", response)
-        return response
+        return response_text
 
     except Exception as e:
-        return f"⚠️ LLM error: {e}"
+        print(f"❌ Error in generate_response: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"⚠️ Error: {e}"
 
 
 def handle_tool_call(tool_name: str, arguments: Dict[str, str]) -> str:

@@ -1,0 +1,36 @@
+{
+    "salon_data.json": [
+        {
+            "name": "Elegant Cuts",
+            "address": "123 Main St, Springfield",
+            "phone": "555-1234",
+            "services": [
+                {"name": "Haircut","duration": 30,"price": 25},
+                {"name": "Hair Color","duration": 90,"price": 100},
+                {"name": "Manicure","duration": 45,"price": 40},
+                {"name": "Pedicure","duration": 45,"price": 50},
+                {"name": "Spa Treatment","duration": 60,"price": 80},
+                {"name": "Facial","duration": 60,"price": 70},
+                {"name": "Massage","duration": 60,"price": 90},
+                {"name": "Waxing","duration": 30,"price": 30},
+                {"name": "Makeup Application","duration": 60,"price": 60},
+                {"name": "Bridal Package","duration": 180,"price": 300},
+                {"name": "Children's Haircut","duration": 30,"price": 20},
+                {"name": "Beard Trim","duration": 15,"price": 15},
+                {"name": "Blowout","duration": 30,"price": 35},
+                {"name": "Updo Hairstyling","duration": 60,"price": 75},
+                {"name": "Scalp Treatment","duration": 30,"price": 40}
+            ],
+            "stylists": [
+                {"name": "Alice Johnson","specialties": ["Haircut","Hair Color"]},
+                {"name": "Bob Smith","specialties": ["Manicure","Pedicure"]},
+                {"name": "Cathy Lee","specialties": ["Spa Treatment","Facial"]},
+                {"name": "David Kim","specialties": ["Massage","Waxing"]},
+                {"name": "Eva Green","specialties": ["Makeup Application","Bridal Package"]},
+                {"name": "Frank White","specialties": ["Children's Haircut","Beard Trim"]},
+                {"name": "Grace Brown","specialties": ["Blowout","Updo Hairstyling"]},
+                {"name": "Hank Miller","specialties": ["Scalp Treatment","Haircut"]}
+            ]
+        }
+    ]
+}

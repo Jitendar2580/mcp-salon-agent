@@ -1,4 +1,5 @@
-import os , re
+import json , os , re
+from typing import Any
 import requests
 from sqlalchemy import func
 
@@ -70,18 +71,12 @@ def one_substitution_like_filters(column, term, substring=False):
 
 
 
-
-	# "weather": {
-	# 	"description": "Get current weather information for a city.",
-	# 	"parameters": {
-	# 		"type": "object",
-	# 		"properties": {
-	# 			"city": {
-	# 				"type": "string",
-	# 				"description": "City name (e.g., Tokyo, Paris)"
-	# 			}
-	# 		},
-	# 		"required": ["city"]
-	# 	},
-	# 	"function": get_weather,
-	# }, 
+def load_json_file(filepath: str) -> Any:
+    """Safely load JSON file"""
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return [] if filepath == "booking_data.json" else {}
+    return [] if filepath == "booking_data.json" else {}
